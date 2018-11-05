@@ -7,10 +7,12 @@ import (
 	"io"
 	"net"
 	"os"
-
 	"strings"
 
+	"github.com/alibaba/pouch/pkg/exec"
+
 	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 // AddressFamily is the ip address type.
@@ -171,25 +173,27 @@ func isLoopbackOrPointToPoint(intf *net.Interface) bool {
 // getMatchingGlobalIP returns the first valid global unicast address of the given
 // 'family' from the list of 'addrs'.
 func getMatchingGlobalIP(addrs []net.Addr, family AddressFamily) (net.IP, error) {
-	if len(addrs) > 0 {
-		for i := range addrs {
-			glog.V(4).Infof("Checking addr  %s.", addrs[i].String())
-			ip, _, err := net.ParseCIDR(addrs[i].String())
-			if err != nil {
-				return nil, err
-			}
-			if memberOf(ip, family) {
-				if ip.IsGlobalUnicast() {
-					glog.V(4).Infof("IP found %v", ip)
-					return ip, nil
-				}
-				glog.V(4).Infof("Non-global unicast address found %v", ip)
-			} else {
-				glog.V(4).Infof("%v is not an IPv%d address", ip, int(family))
-			}
-
-		}
+	if len(addrs) == 0 {
+		return nil, nil
 	}
+
+	for i := range addrs {
+		glog.V(4).Infof("Checking addr  %s.", addrs[i].String())
+		ip, _, err := net.ParseCIDR(addrs[i].String())
+		if err != nil {
+			return nil, err
+		}
+		if !memberOf(ip, family) {
+			glog.V(4).Infof("%v is not an IPv%d address", ip, int(family))
+			continue
+		}
+		if ip.IsGlobalUnicast() {
+			glog.V(4).Infof("IP found %v", ip)
+			return ip, nil
+		}
+		glog.V(4).Infof("Non-global unicast address found %v", ip)
+	}
+
 	return nil, nil
 }
 
@@ -200,21 +204,26 @@ func getIPFromInterface(intfName string, forFamily AddressFamily, nw networkInte
 	if err != nil {
 		return nil, err
 	}
-	if isInterfaceUp(intf) {
-		addrs, err := nw.Addrs(intf)
-		if err != nil {
-			return nil, err
-		}
-		glog.V(4).Infof("Interface %q has %d addresses :%v.", intfName, len(addrs), addrs)
-		matchingIP, err := getMatchingGlobalIP(addrs, forFamily)
-		if err != nil {
-			return nil, err
-		}
-		if matchingIP != nil {
-			glog.V(4).Infof("Found valid IPv%d address %v for interface %q.", int(forFamily), matchingIP, intfName)
-			return matchingIP, nil
-		}
+
+	if !isInterfaceUp(intf) {
+		return nil, nil
 	}
+
+	addrs, err := nw.Addrs(intf)
+	if err != nil {
+		return nil, err
+	}
+
+	glog.V(4).Infof("Interface %q has %d addresses :%v.", intfName, len(addrs), addrs)
+	matchingIP, err := getMatchingGlobalIP(addrs, forFamily)
+	if err != nil {
+		return nil, err
+	}
+	if matchingIP != nil {
+		glog.V(4).Infof("Found valid IPv%d address %v for interface %q.", int(forFamily), matchingIP, intfName)
+		return matchingIP, nil
+	}
+
 	return nil, nil
 }
 
@@ -362,6 +371,26 @@ func chooseHostInterfaceFromRoute(routes []Route, nw networkInterfacer) (net.IP,
 	return nil, fmt.Errorf("unable to select an IP from default routes")
 }
 
+func getAddrByHostname() (net.IP, error) {
+	exit, stdout, stderr, err := exec.Run(0, "hostname", "-i")
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get ip address, stdout: (%s), stderr: (%s), exit: (%s)",
+			stdout, stderr, exit)
+	}
+
+	if exit != 0 {
+		return nil, errors.Errorf("failed to get ip address, stdout: (%s), stderr: (%s), exit: (%s)",
+			stdout, stderr, exit)
+	}
+
+	addr := net.ParseIP(strings.TrimSpace(stdout))
+	if addr == nil {
+		return nil, errors.Errorf("failed to get ip address, invalid format: (%s)", stdout)
+	}
+
+	return addr, nil
+}
+
 // ChooseBindAddress is used to choose an Host IP address for binding.
 // If bind-address is usable, return it directly
 // If bind-address is not usable (unset, 0.0.0.0, or loopback), we will use the host's default
@@ -369,10 +398,16 @@ func chooseHostInterfaceFromRoute(routes []Route, nw networkInterfacer) (net.IP,
 func ChooseBindAddress(bindAddress net.IP) (net.IP, error) {
 	if bindAddress == nil || bindAddress.IsUnspecified() || bindAddress.IsLoopback() {
 		hostIP, err := ChooseHostInterface()
-		if err != nil {
-			return nil, err
+		if err == nil {
+			bindAddress = hostIP
+		} else {
+			hostIP, err = getAddrByHostname()
+			if err != nil {
+				return nil, err
+			}
+			bindAddress = hostIP
 		}
-		bindAddress = hostIP
+
 	}
 	return bindAddress, nil
 }

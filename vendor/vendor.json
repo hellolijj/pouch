@@ -15,11 +15,6 @@
 			"revisionTime": "2018-05-01T17:05:46Z"
 		},
 		{
-			"checksumSHA1": "FU/snvk/G/MqCWeKVnTyCKx+Y5M=",
-			"path": "github.com/Microsoft/go-winio/vhd",
-			"revision": ""
-		},
-		{
 			"checksumSHA1": "65Fw8Cr6ScQ3PiFTpxdlRHkYKzY=",
 			"path": "github.com/Microsoft/hcsshim",
 			"revision": "f47e6d88e78fee4d6d76d181bc93101f52dfb635",
@@ -102,10 +97,6 @@
 			"path": "github.com/RackSec/srslog",
 			"revision": "1f7cff998e92763c026b26ab7c80a39e19acc368",
 			"revisionTime": "2018-05-14T15:09:17Z"
-		},
-		{
-			"path": "github.com/alibaba/pouch/libcontainerd",
-			"revision": ""
 		},
 		{
 			"checksumSHA1": "eiRzLoenl7oEVCuoT+Ju/zWBlKg=",
@@ -540,14 +531,6 @@
 			"versionExact": "v1.0.3"
 		},
 		{
-			"checksumSHA1": "grEvoaogoFLNPAH7XjjNgau3SNY=",
-			"path": "github.com/containerd/containerd/version",
-			"revision": "773c489c9c1b21a6d78b5c538cd395416ec50f88",
-			"revisionTime": "2018-04-02T20:34:37Z",
-			"version": "v1.0.3",
-			"versionExact": "v1.0.3"
-		},
-		{
 			"checksumSHA1": "GqIrOttKaO7k6HIaHQLPr3cY7rY=",
 			"path": "github.com/containerd/continuity/pathdriver",
 			"revision": "d3c23511c1bf5851696cba83143d9cbcd666869b",
@@ -579,10 +562,10 @@
 			"tree": true
 		},
 		{
-			"checksumSHA1": "tkdJGOYqk/F/YIDedKl5CllvbYA=",
+			"checksumSHA1": "JOgERxEIEiFk4AN0IielftEFKmY=",
 			"path": "github.com/contiv/executor",
-			"revision": "337a1adae71d5814d0a11c41c0f11d292b7a7625",
-			"revisionTime": "2016-07-27T18:54:06Z"
+			"revision": "d263f4daa3ad0ab942bf44099bd28ec8ca1f8a59",
+			"revisionTime": "2018-06-26T23:32:36Z"
 		},
 		{
 			"checksumSHA1": "APRJtya3c5FX3g4HTCNWGGeCcM8=",
@@ -1185,12 +1168,6 @@
 			"tree": true
 		},
 		{
-			"checksumSHA1": "I21ZDprdd0n98lXaL8Kc79Ypihs=",
-			"path": "github.com/go-ini/ini",
-			"revision": "5b3e00af70a9484542169a976dcab8d03e601a17",
-			"revisionTime": "2017-10-14T21:05:30Z"
-		},
-		{
 			"checksumSHA1": "OwxeZNizPZT7YriySSR4haPHcRg=",
 			"path": "github.com/go-openapi/analysis",
 			"revision": "8ed83f2ea9f00f945516462951a288eaa68bf0d6",
@@ -1249,12 +1226,6 @@
 			"path": "github.com/go-openapi/validate",
 			"revision": "8a82927c942c94794a5cd8b8b50ce2f48a955c0c",
 			"revisionTime": "2017-07-05T07:52:02Z"
-		},
-		{
-			"checksumSHA1": "tszr7JJNLyWwyd5PCvy3IoQ6zdU=",
-			"path": "github.com/go-resty/resty",
-			"revision": "9ac9c42358f7c3c69ac9f8610e8790d7c338e85d",
-			"revisionTime": "2017-09-25T19:29:30Z"
 		},
 		{
 			"checksumSHA1": "YuGQx5ilYzlkaqeyVQh8qpsGExI=",
@@ -1444,12 +1415,6 @@
 			"revisionTime": "2017-10-06T17:48:01Z"
 		},
 		{
-			"checksumSHA1": "NiPRC0JDsfCFir75S1TrFHPP8+M=",
-			"path": "github.com/magiconair/properties",
-			"revision": "2c9e9502788518c97fe44e8955cd069417ee89df",
-			"revisionTime": "2018-02-17T13:45:45Z"
-		},
-		{
 			"checksumSHA1": "T8soMJArSZrYnhmdpAnq1bVxQ6Q=",
 			"path": "github.com/mailru/easyjson/buffer",
 			"revision": "2a92e673c9a6302dd05c3a691ae1f24aef46457d",
@@ -1520,6 +1485,12 @@
 			"path": "github.com/opencontainers/image-spec/specs-go/v1",
 			"revision": "2b8ed96d2a422bf205adcdfa05272dc12c81613b",
 			"revisionTime": "2017-11-08T19:22:26Z"
+		},
+		{
+			"checksumSHA1": "gVVY8k2G3ws+V1czsfxfuRs8log=",
+			"path": "github.com/opencontainers/runc/libcontainer/apparmor",
+			"revision": "e6516b3d5dc780cb57a976013c242a9a93052543",
+			"revisionTime": "2017-12-15T16:47:07Z"
 		},
 		{
 			"checksumSHA1": "s0A2QT/y6WHMQx6djbl4TopB/34=",
