@@ -9,17 +9,21 @@ import (
 func ParseDiskQuota(quotas []string) (map[string]string, error) {
 	var quotaMaps = make(map[string]string)
 
+	if quotas == nil {
+		return nil, fmt.Errorf("invalid format for disk quota: %s", quotas)
+	}
+
 	for _, quota := range quotas {
-		if quota == "" {
+		if strings.TrimSpace(quota) == "" {
 			return nil, fmt.Errorf("invalid format for disk quota: %s", quota)
 		}
 
 		parts := strings.Split(quota, "=")
 		switch len(parts) {
 		case 1:
-			quotaMaps["/"] = parts[0]
+			quotaMaps["/"] = strings.TrimSpace(parts[0])
 		case 2:
-			quotaMaps[parts[0]] = parts[1]
+			quotaMaps[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 		default:
 			return nil, fmt.Errorf("invalid format for disk quota: %s", quota)
 		}
