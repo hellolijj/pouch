@@ -10,6 +10,8 @@ import (
 	units "github.com/docker/go-units"
 )
 
+const blkioOptsType = "strings"
+
 // WeightDevice defines weight device
 type WeightDevice struct {
 	values []*types.WeightDevice
@@ -58,15 +60,13 @@ func (w *WeightDevice) String() string {
 
 // Type implement WeightDevice as pflag.Value interface
 func (w *WeightDevice) Type() string {
-	return "value"
+	return blkioOptsType
 }
 
 // Value returns all values as type WeightDevice
 func (w *WeightDevice) Value() []*types.WeightDevice {
 	var weightDevice []*types.WeightDevice
-	for _, v := range w.values {
-		weightDevice = append(weightDevice, v)
-	}
+	weightDevice = append(weightDevice, w.values...)
 
 	return weightDevice
 }
@@ -116,15 +116,13 @@ func (t *ThrottleBpsDevice) String() string {
 
 // Type implement ThrottleBpsDevice as pflag.Value interface
 func (t *ThrottleBpsDevice) Type() string {
-	return "value"
+	return blkioOptsType
 }
 
 // Value returns all values as type ThrottleDevice
 func (t *ThrottleBpsDevice) Value() []*types.ThrottleDevice {
 	var throttleDevice []*types.ThrottleDevice
-	for _, v := range t.values {
-		throttleDevice = append(throttleDevice, v)
-	}
+	throttleDevice = append(throttleDevice, t.values...)
 
 	return throttleDevice
 }
@@ -174,15 +172,13 @@ func (t *ThrottleIOpsDevice) String() string {
 
 // Type implement ThrottleIOpsDevice as pflag.Value interface
 func (t *ThrottleIOpsDevice) Type() string {
-	return "value"
+	return blkioOptsType
 }
 
 // Value returns all values
 func (t *ThrottleIOpsDevice) Value() []*types.ThrottleDevice {
 	var throttleDevice []*types.ThrottleDevice
-	for _, v := range t.values {
-		throttleDevice = append(throttleDevice, v)
-	}
+	throttleDevice = append(throttleDevice, t.values...)
 
 	return throttleDevice
 }

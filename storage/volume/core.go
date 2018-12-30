@@ -6,10 +6,11 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/alibaba/pouch/apis/filters"
+	"github.com/alibaba/pouch/pkg/errtypes"
 	"github.com/alibaba/pouch/pkg/kmutex"
 	metastore "github.com/alibaba/pouch/pkg/meta"
 	"github.com/alibaba/pouch/storage/volume/driver"
-	volerr "github.com/alibaba/pouch/storage/volume/error"
 	"github.com/alibaba/pouch/storage/volume/types"
 
 	"github.com/pkg/errors"
@@ -81,7 +82,7 @@ func NewCore(cfg Config) (*Core, error) {
 }
 
 // getVolume return a volume's info with specified name, If not errors.
-func (c *Core) getVolume(id types.VolumeID) (*types.Volume, error) {
+func (c *Core) getVolume(id types.VolumeContext) (*types.Volume, error) {
 	ctx := driver.Contexts()
 
 	// first, try to get volume from local store.
@@ -89,7 +90,7 @@ func (c *Core) getVolume(id types.VolumeID) (*types.Volume, error) {
 	if err == nil {
 		v, ok := obj.(*types.Volume)
 		if !ok {
-			return nil, volerr.ErrVolumeNotFound
+			return nil, errtypes.ErrVolumeNotFound
 		}
 
 		// get the volume driver.
@@ -102,10 +103,10 @@ func (c *Core) getVolume(id types.VolumeID) (*types.Volume, error) {
 		if d, ok := dv.(driver.Getter); ok {
 			curV, err := d.Get(ctx, id.Name)
 			if err != nil {
-				return nil, volerr.ErrVolumeNotFound
+				return nil, errtypes.ErrVolumeNotFound
 			}
 
-			v.Status.MountPoint = curV.Status.MountPoint
+			return curV, nil
 		}
 
 		return v, nil
@@ -142,11 +143,11 @@ func (c *Core) getVolume(id types.VolumeID) (*types.Volume, error) {
 		return v, nil
 	}
 
-	return nil, volerr.ErrVolumeNotFound
+	return nil, errtypes.ErrVolumeNotFound
 }
 
 // getVolumeDriver return the backend driver and volume with specified volume's id.
-func (c *Core) getVolumeDriver(id types.VolumeID) (*types.Volume, driver.Driver, error) {
+func (c *Core) getVolumeDriver(id types.VolumeContext) (*types.Volume, driver.Driver, error) {
 	v, err := c.getVolume(id)
 	if err != nil {
 		return nil, nil, err
@@ -158,20 +159,8 @@ func (c *Core) getVolumeDriver(id types.VolumeID) (*types.Volume, driver.Driver,
 	return v, dv, nil
 }
 
-// existVolume return 'true' if volume be found and not errors.
-func (c *Core) existVolume(id types.VolumeID) (bool, error) {
-	_, err := c.getVolume(id)
-	if err != nil {
-		if ec, ok := err.(volerr.CoreError); ok && ec.IsVolumeNotFound() {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
 // GetVolume return a volume's info with specified name, If not errors.
-func (c *Core) GetVolume(id types.VolumeID) (*types.Volume, error) {
+func (c *Core) GetVolume(id types.VolumeContext) (*types.Volume, error) {
 	c.lock.Lock(id.Name)
 	defer c.lock.Unlock(id.Name)
 
@@ -179,15 +168,16 @@ func (c *Core) GetVolume(id types.VolumeID) (*types.Volume, error) {
 }
 
 // CreateVolume use to create a volume, if failed, will return error info.
-func (c *Core) CreateVolume(id types.VolumeID) (*types.Volume, error) {
+func (c *Core) CreateVolume(id types.VolumeContext) (*types.Volume, error) {
 	c.lock.Lock(id.Name)
 	defer c.lock.Unlock(id.Name)
 
-	exist, err := c.existVolume(id)
-	if err != nil {
+	volume, err := c.getVolume(id)
+	if err == nil {
+		return volume, errtypes.ErrVolumeExisted
+	}
+	if !(errtypes.IsVolumeNotFound(err)) {
 		return nil, err
-	} else if exist {
-		return nil, volerr.ErrVolumeExisted
 	}
 
 	dv, err := driver.Get(id.Driver)
@@ -195,7 +185,7 @@ func (c *Core) CreateVolume(id types.VolumeID) (*types.Volume, error) {
 		return nil, err
 	}
 
-	volume, err := dv.Create(driver.Contexts(), id)
+	volume, err = dv.Create(driver.Contexts(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -209,8 +199,8 @@ func (c *Core) CreateVolume(id types.VolumeID) (*types.Volume, error) {
 }
 
 // ListVolumes return all volumes.
-// Param 'labels' use to filter the volumes, only return those you want.
-func (c *Core) ListVolumes(labels map[string]string) ([]*types.Volume, error) {
+// Param 'filter' use to filter the volumes, only return those you want.
+func (c *Core) ListVolumes(filter filters.Args) ([]*types.Volume, error) {
 	var retVolumes = make([]*types.Volume, 0)
 
 	// list local meta store.
@@ -229,11 +219,8 @@ func (c *Core) ListVolumes(labels map[string]string) ([]*types.Volume, error) {
 	ctx := driver.Contexts()
 
 	var realVolumes = map[string]*types.Volume{}
-	var volumeDrivers = map[string]driver.Driver{}
 
 	for _, dv := range drivers {
-		volumeDrivers[dv.Name(ctx)] = dv
-
 		d, ok := dv.(driver.Lister)
 		if !ok {
 			// not Lister, ignore it.
@@ -256,13 +243,11 @@ func (c *Core) ListVolumes(labels map[string]string) ([]*types.Volume, error) {
 			continue
 		}
 
-		d, ok := volumeDrivers[v.Spec.Backend]
-		if !ok {
-			// driver not exist, ignore it
+		d, err := driver.Get(v.Spec.Backend)
+		if err != nil || d == nil {
 			continue
 		}
 
-		// the local driver and tmpfs driver
 		if d.StoreMode(ctx).IsLocal() {
 			retVolumes = append(retVolumes, v)
 			continue
@@ -273,6 +258,7 @@ func (c *Core) ListVolumes(labels map[string]string) ([]*types.Volume, error) {
 			// real volume not exist, ignore it
 			continue
 		}
+
 		v.Status.MountPoint = rv.Status.MountPoint
 
 		delete(realVolumes, name)
@@ -288,29 +274,40 @@ func (c *Core) ListVolumes(labels map[string]string) ([]*types.Volume, error) {
 		retVolumes = append(retVolumes, v)
 	}
 
-	// filter volumes if specify labels
-	if len(labels) != 0 {
-		filteredVolumes := make([]*types.Volume, 0)
-		for k, v := range labels {
-			for _, vol := range retVolumes {
-				if val, ok := vol.Labels[k]; ok && val == v {
-					filteredVolumes = append(filteredVolumes, vol)
-				}
-			}
-		}
-
-		return filteredVolumes, nil
+	// filter volumes
+	if filter.Len() == 0 {
+		return retVolumes, nil
 	}
 
-	return retVolumes, nil
+	filteredVolumes := make([]*types.Volume, 0)
+	for _, vol := range retVolumes {
+		// do label filter
+		found := true
+		if filter.Contains("label") {
+			found = found && filter.MatchKVList("label", vol.Labels)
+		}
+		// do name filter
+		if filter.Contains("name") {
+			found = found && filter.ExactMatch("name", vol.Name)
+		}
+		// do driverName filter
+		if filter.Contains("driver") {
+			found = found && filter.ExactMatch("driver", vol.Spec.Backend)
+		}
+		if found {
+			filteredVolumes = append(filteredVolumes, vol)
+		}
+	}
+
+	return filteredVolumes, nil
 }
 
 // ListVolumeName return the name of all volumes only.
-// Param 'labels' use to filter the volume's names, only return those you want.
-func (c *Core) ListVolumeName(labels map[string]string) ([]string, error) {
+// Param 'filter' use to filter the volume's names, only return those you want.
+func (c *Core) ListVolumeName(filter filters.Args) ([]string, error) {
 	var names []string
 
-	volumes, err := c.ListVolumes(labels)
+	volumes, err := c.ListVolumes(filter)
 	if err != nil {
 		return names, err
 	}
@@ -323,7 +320,7 @@ func (c *Core) ListVolumeName(labels map[string]string) ([]string, error) {
 }
 
 // RemoveVolume remove volume from storage and meta information, if not success return error.
-func (c *Core) RemoveVolume(id types.VolumeID) error {
+func (c *Core) RemoveVolume(id types.VolumeContext) error {
 	c.lock.Lock(id.Name)
 	defer c.lock.Unlock(id.Name)
 
@@ -341,7 +338,7 @@ func (c *Core) RemoveVolume(id types.VolumeID) error {
 }
 
 // VolumePath return the path of volume on node host.
-func (c *Core) VolumePath(id types.VolumeID) (string, error) {
+func (c *Core) VolumePath(id types.VolumeContext) (string, error) {
 	c.lock.Lock(id.Name)
 	defer c.lock.Unlock(id.Name)
 
@@ -354,7 +351,7 @@ func (c *Core) VolumePath(id types.VolumeID) (string, error) {
 }
 
 // AttachVolume to enable a volume on local host.
-func (c *Core) AttachVolume(id types.VolumeID, extra map[string]string) (*types.Volume, error) {
+func (c *Core) AttachVolume(id types.VolumeContext, extra map[string]string) (*types.Volume, error) {
 	c.lock.Lock(id.Name)
 	defer c.lock.Unlock(id.Name)
 
@@ -385,7 +382,7 @@ func (c *Core) AttachVolume(id types.VolumeID, extra map[string]string) (*types.
 }
 
 // DetachVolume to disable a volume on local host.
-func (c *Core) DetachVolume(id types.VolumeID, extra map[string]string) (*types.Volume, error) {
+func (c *Core) DetachVolume(id types.VolumeContext, extra map[string]string) (*types.Volume, error) {
 	c.lock.Lock(id.Name)
 	defer c.lock.Unlock(id.Name)
 

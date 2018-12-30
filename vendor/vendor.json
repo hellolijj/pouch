@@ -141,12 +141,12 @@
 			"revisionTime": "2017-09-25T15:48:32Z"
 		},
 		{
-			"checksumSHA1": "1ny6UV3Oq4kaqpQtM8bs9W9e3vw=",
+			"checksumSHA1": "FWVcLZHVLh1DFPx4vdgdXZSPICY=",
 			"path": "github.com/containerd/containerd",
-			"revision": "773c489c9c1b21a6d78b5c538cd395416ec50f88",
-			"revisionTime": "2018-04-02T20:34:37Z",
-			"version": "v1.0.3",
-			"versionExact": "v1.0.3"
+			"revision": "8d8f780274f3fcf2efb5d21c25569b6fc3bb08fb",
+			"revisionTime": "2018-12-05T03:53:22Z",
+			"version": "v1.0.3-dev-alibaba",
+			"versionExact": "v1.0.3-dev-alibaba"
 		},
 		{
 			"checksumSHA1": "5pKxGJe3gsS/LjW8ZklKJvSXBMs=",
@@ -515,12 +515,12 @@
 			"versionExact": "v1.0.3"
 		},
 		{
-			"checksumSHA1": "DzMZUrndYzzDT7nqwcxHq2oC8Kc=",
+			"checksumSHA1": "/C8Wbf5VxH2wJkQTcZ+rsgG0BKY=",
 			"path": "github.com/containerd/containerd/snapshots",
-			"revision": "773c489c9c1b21a6d78b5c538cd395416ec50f88",
-			"revisionTime": "2018-04-02T20:34:37Z",
-			"version": "v1.0.3",
-			"versionExact": "v1.0.3"
+			"revision": "8d8f780274f3fcf2efb5d21c25569b6fc3bb08fb",
+			"revisionTime": "2018-12-05T03:53:22Z",
+			"version": "v1.0.3-dev-alibaba",
+			"versionExact": "v1.0.3-dev-alibaba"
 		},
 		{
 			"checksumSHA1": "8u2ZojhEDaoA4Co6usLof+TKj78=",
@@ -836,11 +836,11 @@
 			"revisionTime": "2018-06-21T03:37:56Z"
 		},
 		{
-			"checksumSHA1": "PjtJFUyEOokrmiBiHmfXrX/lAug=",
+			"checksumSHA1": "sg0Y+cZfphw37dkRJ45DF5ydvRs=",
 			"origin": "github.com/alibaba/libnetwork/bitseq",
 			"path": "github.com/docker/libnetwork/bitseq",
-			"revision": "04a77bdbfb6f51185791ee3d61e3644f058e6b21",
-			"revisionTime": "2018-06-11T16:09:43Z"
+			"revision": "993eca828c7d68859e321c91cd0a50ac6dbc3234",
+			"revisionTime": "2018-11-07T10:13:49Z"
 		},
 		{
 			"checksumSHA1": "yg3AGtG4at2y028lOyXP4Bg8tzY=",
@@ -1568,10 +1568,16 @@
 			"versionExact": "v0.8.0"
 		},
 		{
-			"checksumSHA1": "hu0MsbTdFzZxNRyAxe2HmTFFFak=",
+			"checksumSHA1": "WSCsSdD3I7Are0ntaIq6zR9tl0s=",
 			"path": "github.com/prometheus/client_golang/prometheus",
-			"revision": "5cec1d0429b02e4323e042eb04dafdb079ddf568",
-			"revisionTime": "2017-10-05T11:29:15Z"
+			"revision": "f02bfc3484a6b03d1fc00d72d86add103ef9567b",
+			"revisionTime": "2018-01-11T15:59:30Z"
+		},
+		{
+			"checksumSHA1": "0AZfw0mlRpOkYPR+d4ftlPUwtlc=",
+			"path": "github.com/prometheus/client_golang/prometheus/promhttp",
+			"revision": "f02bfc3484a6b03d1fc00d72d86add103ef9567b",
+			"revisionTime": "2018-01-11T15:59:30Z"
 		},
 		{
 			"checksumSHA1": "DvwvOlPNAgRntBzt3b3OSRMS2N4=",

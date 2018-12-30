@@ -12,6 +12,7 @@ import (
 
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/cri/stream/remotecommand"
+	"github.com/alibaba/pouch/ctrd"
 	"github.com/alibaba/pouch/pkg/meta"
 	"github.com/alibaba/pouch/pkg/utils"
 
@@ -267,6 +268,12 @@ type Container struct {
 
 	// SnapshotID specify id of the snapshot that container using.
 	SnapshotID string
+
+	// Masks over the provided paths inside the container.
+	MaskedPaths []string `json:"MaskedPaths,omitempty"`
+
+	// Set the provided paths as RO inside the container.
+	ReadonlyPaths []string `json:"ReadonlyPaths，omitempty"`
 }
 
 // Key returns container's id.
@@ -439,10 +446,11 @@ func (c *Container) FormatStatus() (string, error) {
 }
 
 // UnsetMergedDir unsets Snapshot MergedDir. Stop a container will
-// delete the containerd container, the merged dir
-// will also be deleted, so we should unset the
-// container's MergedDir.
+// delete the containerd container, the merged dir  will also be
+// deleted, so we should unset the container's MergedDir.
 func (c *Container) UnsetMergedDir() {
+	c.Lock()
+	defer c.Unlock()
 	if c.Snapshotter == nil || c.Snapshotter.Data == nil {
 		return
 	}
@@ -452,7 +460,7 @@ func (c *Container) UnsetMergedDir() {
 // SetSnapshotterMeta sets snapshotter for container
 func (c *Container) SetSnapshotterMeta(mounts []mount.Mount) {
 	// TODO(ziren): now we only support overlayfs
-	data := make(map[string]string, 0)
+	data := make(map[string]string)
 	for _, opt := range mounts[0].Options {
 		if strings.HasPrefix(opt, "upperdir=") {
 			data["UpperDir"] = strings.TrimPrefix(opt, "upperdir=")
@@ -466,7 +474,7 @@ func (c *Container) SetSnapshotterMeta(mounts []mount.Mount) {
 	}
 
 	c.Snapshotter = &types.SnapshotterData{
-		Name: "overlayfs",
+		Name: ctrd.CurrentSnapshotterName(),
 		Data: data,
 	}
 }
@@ -489,6 +497,41 @@ func (c *Container) GetSpecificBasePath(path string) string {
 	}
 
 	return ""
+}
+
+// CleanRootfsSnapshotDirs deletes container's rootfs snapshot MergedDir, UpperDir and
+// WorkDir. Since the snapshot of container created by containerd will be cleaned by
+// containerd, so we only clean rootfs that is RootFSProvided.
+func (c *Container) CleanRootfsSnapshotDirs() error {
+	// if RootFSProvided is not set or Snapshotter data empty , we no need clean the rootfs
+	if !c.RootFSProvided || c.Snapshotter == nil || c.Snapshotter.Data == nil {
+		return nil
+	}
+
+	var (
+		removeDirs []string
+	)
+
+	c.Lock()
+	for _, dir := range []string{"MergedDir", "UpperDir", "WorkDir"} {
+		if v, ok := c.Snapshotter.Data[dir]; ok {
+			removeDirs = append(removeDirs, v)
+		}
+	}
+	c.Unlock()
+
+	var errMsgs []string
+	for _, dir := range removeDirs {
+		if err := os.RemoveAll(dir); err != nil {
+			errMsgs = append(errMsgs, err.Error())
+		}
+	}
+
+	if len(errMsgs) != 0 {
+		return fmt.Errorf(strings.Join(errMsgs, "\n"))
+	}
+
+	return nil
 }
 
 // ContainerRestartPolicy represents the policy is used to manage container.

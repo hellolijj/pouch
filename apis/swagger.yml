@@ -348,8 +348,6 @@ paths:
             A JSON encoded value of the filters (a `map[string][]string`) to process on the images list. Available filters:
 
             - `before`=(`<image-name>[:<tag>]`,  `<image id>` or `<image@digest>`)
-            - `dangling=true`
-            - `label=key` or `label="key=value"` of an image label
             - `reference`=(`<image-name>[:<tag>]`)
             - `since`=(`<image-name>[:<tag>]`,  `<image id>` or `<image@digest>`)
           type: "string"
@@ -1258,10 +1256,6 @@ paths:
             JSON encoded value of the filters (a `map[string][]string`) to
             process on the volumes list. Available filters:
 
-            - `dangling=<boolean>` When set to `true` (or `1`), returns all
-               volumes that are not in use by a container. When set to `false`
-               (or `0`), only volumes that are in use by one or more
-               containers are returned.
             - `driver=<volume-driver-name>` Matches volumes based on their driver.
             - `label=<key>` or `label=<key>:<value>` Matches volumes based on
                the presence of a `label` alone or a `label` and a value.
@@ -2187,6 +2181,7 @@ definitions:
       StopTimeout:
         description: "Timeout to stop a container in seconds."
         type: "integer"
+        minimum: 0
         default: 10
       Shell:
         description: "Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell."
@@ -2241,7 +2236,17 @@ definitions:
           MaxLength: 64
           The characters of given id should be in 0123456789abcdef.
           By default, given id is unnecessary.
- 
+      MaskedPaths:
+        description: "Masks over the provided paths inside the container."
+        type: "array"
+        items:
+          type: "string"
+      ReadonlyPaths:
+        description: "Set the provided paths as RO inside the container."
+        type: "array"
+        items:
+          type: "string"
+
   ContainerCreateResp:
     description: "response returned by daemon when container create successfully"
     type: "object"
@@ -2599,7 +2604,6 @@ definitions:
           Microseconds of CPU time that the container can get in a CPU period."
         type: "integer"
         format: "int64"
-        minimum: 1000
         x-nullable: false
         x-omitempty: false
       CpuRealtimePeriod:
@@ -2661,10 +2665,10 @@ definitions:
         x-nullable: false
         x-omitempty: false
       MemorySwappiness:
-        description: "Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100."
+        description: "Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100. -1 is also accepted, as a legacy alias of 0."
         type: "integer"
         format: "int64"
-        minimum: 0
+        minimum: -1
         maximum: 100
         x-omitempty: false
       NanoCpus:
@@ -3222,6 +3226,7 @@ definitions:
   ExecCreateConfig:
     type: "object"
     description: is a small subset of the Config struct that holds the configuration.
+    required: [Cmd]
     properties:
       User:
         type: "string"
@@ -3387,24 +3392,33 @@ definitions:
         description: "The container's image"
         type: "string"
       ResolvConfPath:
+        description: "the path of container's resolvConf file on host."
         type: "string"
-      HostnamePath:
+      HostnamePath: 
+        description: "the path of container's hostname file on host."
         type: "string"
       HostsPath:
+        description: "the path of container's hosts file on host."
         type: "string"
       LogPath:
+        description: "the path of container's log file on host."
         type: "string"
       Name:
+        description: "name of the created container."
         type: "string"
       RestartCount:
+        description: "the container's restart time"
         type: "integer"
       Driver:
+        description: ""
         type: "string"
       MountLabel:
+        description: "MountLabel contains the options for the 'mount' command."
         type: "string"
       ProcessLabel:
         type: "string"
       AppArmorProfile:
+        description: "AppArmorProfile are specific for AppArmor to Unix platforms"
         type: "string"
       ExecIDs:
         description: "exec ids of container"
@@ -3917,8 +3931,9 @@ definitions:
         type: "string"
         example: "127.0.0.1"
       HostPort:
-        description: "Host port number that the container's port is mapped to."
+        description: "Host port number that the container's port is mapped to. range (0,65535]"
         type: "string"
+        pattern: ^([1-9]|[1-9]\d{1,3}|[1-5]\d{4}|6[0-4]\d{3}|65[0-4]\d{2}|655[0-2]\d|6553[0-5])$
         example: "4443"
 
   RestartPolicy:

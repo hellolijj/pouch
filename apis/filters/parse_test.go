@@ -149,3 +149,124 @@ func TestFromParam(t *testing.T) {
 		}
 	}
 }
+
+func TestFromFilterOpts(t *testing.T) {
+	filterOpts := []string{
+		"reference=img1",
+		"since=img2",
+		"before=img3",
+		"reference=img3",
+	}
+
+	args, err := FromFilterOpts(filterOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	images := args.Get("reference")
+	if len(images) != 2 {
+		t.Fatal("Expected two values of reference key, but got one.")
+	}
+
+	if !args.Contains("since") {
+		t.Fatal("Excepted get since key, but got none.")
+	}
+
+	if !args.Contains("before") {
+		t.Fatal("Excepted get before key, but got none.")
+	}
+}
+
+func TestArgsMatchKVList(t *testing.T) {
+	// Not empty sources
+	sources := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+		"key3": "value3",
+	}
+
+	matches := map[*Args]string{
+		{}: "field",
+		{map[string]map[string]bool{
+			"created": {"today": true},
+			"labels":  {"key1": true}},
+		}: "labels",
+		{map[string]map[string]bool{
+			"created": {"today": true},
+			"labels":  {"key1=value1": true}},
+		}: "labels",
+	}
+
+	for args, field := range matches {
+		if !args.MatchKVList(field, sources) {
+			t.Fatalf("Expected true for %v on %v, got false", sources, args)
+		}
+	}
+
+	differs := map[*Args]string{
+		{map[string]map[string]bool{
+			"created": {"today": true}},
+		}: "created",
+		{map[string]map[string]bool{
+			"created": {"today": true},
+			"labels":  {"key4": true}},
+		}: "labels",
+		{map[string]map[string]bool{
+			"created": {"today": true},
+			"labels":  {"key1=value3": true}},
+		}: "labels",
+	}
+
+	for args, field := range differs {
+		if args.MatchKVList(field, sources) {
+			t.Fatalf("Expected false for %v on %v, got true", sources, args)
+		}
+	}
+}
+
+func TestArgsValidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		testArgs Args
+		accepted map[string]bool
+		wantErr  bool
+	}{
+		{
+			name: "mapping keys are in the accepted set",
+			testArgs: Args{
+				map[string]map[string]bool{
+					"created": {
+						"today": true,
+					},
+				},
+			},
+			accepted: map[string]bool{
+				"created": true,
+			},
+			wantErr: false,
+		},
+		{
+			name: "mapping keys are not in the accepted set",
+			testArgs: Args{
+				map[string]map[string]bool{
+					"created": {
+						"today": true,
+					},
+				},
+			},
+			accepted: map[string]bool{
+				"created": false,
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.testArgs.Validate(tt.accepted)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+		})
+	}
+}

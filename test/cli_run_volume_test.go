@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"strings"
 
 	"github.com/alibaba/pouch/apis/types"
+	"github.com/alibaba/pouch/pkg/utils"
 	"github.com/alibaba/pouch/test/command"
 	"github.com/alibaba/pouch/test/environment"
 
@@ -36,14 +37,8 @@ func (suite *PouchRunVolumeSuite) TearDownTest(c *check.C) {
 
 // TestRunWithLocalVolume is to verify run container with -v volume works.
 func (suite *PouchRunVolumeSuite) TestRunWithLocalVolume(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestRunWithLocalVolume"
 
-	name := funcname
 	{
 		res := command.PouchRun("volume", "create", "--name", funcname)
 		defer func() {
@@ -53,9 +48,9 @@ func (suite *PouchRunVolumeSuite) TestRunWithLocalVolume(c *check.C) {
 	}
 
 	{
-		res := command.PouchRun("run", "--name", name, "-v", funcname+":/tmp",
+		res := command.PouchRun("run", "--name", funcname, "-v", funcname+":/tmp",
 			busyboxImage, "touch", "/tmp/test")
-		defer DelContainerForceMultyTime(c, name)
+		defer DelContainerForceMultyTime(c, funcname)
 		res.Assert(c, icmd.Success)
 	}
 
@@ -64,12 +59,79 @@ func (suite *PouchRunVolumeSuite) TestRunWithLocalVolume(c *check.C) {
 		DefaultVolumeMountPath+"/"+funcname+"/test").Assert(c, icmd.Success)
 }
 
+// TestRunWithTmpFSVolume tests running container with tmpfs volume.
+func (suite *PouchRunVolumeSuite) TestRunWithTmpFSVolume(c *check.C) {
+	cname := "TestRunWithTmpfsVolume"
+
+	command.PouchRun("volume", "create", "--name", cname, "--driver", "tmpfs",
+		"-o", "opt.size=1m").Assert(c, icmd.Success)
+	defer func() {
+		command.PouchRun("volume", "rm", cname).Assert(c, icmd.Success)
+	}()
+
+	res := command.PouchRun("run", "-v", cname+":/opt", "--name", cname,
+		busyboxImage, "df", "-h", "/opt")
+	defer DelContainerForceMultyTime(c, cname)
+	res.Assert(c, icmd.Success)
+
+	c.Assert(strings.Contains(res.Stdout(), "1.0M"), check.Equals, true)
+}
+
+//TestRunWithVolumeCopyData tests binds copying data
+//Pouch volumes should copy data, but host bind mount should not.
+func (suite *PouchRunVolumeSuite) TestRunWithVolumeCopyData(c *check.C) {
+	volumeName := "volume-test-copydata"
+	hostdir := "/tmp/bind-test-copydata"
+	containerName1 := "copydata-test-1"
+	containerName2 := "copydata-test-2"
+
+	// create volume
+	command.PouchRun("volume", "create", "-n", volumeName).Assert(c, icmd.Success)
+	defer func() {
+		command.PouchRun("volume", "rm", volumeName).Assert(c, icmd.Success)
+	}()
+
+	// dirs under busybox image `/var` directory
+	// notes: there is a `/var/log` directory under rich mode container
+	expectedDirs := []string{"spool", "www"}
+
+	command.PouchRun("run", "-t", "-v", volumeName+":/var", "--name", containerName1, busyboxImage, "ls", "/var").Assert(c, icmd.Success)
+	defer DelContainerForceMultyTime(c, containerName1)
+	output1 := icmd.RunCommand("ls", DefaultVolumeMountPath+"/"+volumeName).Stdout()
+
+	if !lsResultContains(output1, expectedDirs) {
+		c.Fatalf("expected \"%s\" directory under /var directory, but got %s",
+			strings.Join(expectedDirs, " "), output1)
+	}
+
+	command.PouchRun("run", "-t", "-v", hostdir+":/var", "--name", containerName2, busyboxImage, "ls", "/var").Assert(c, icmd.Success)
+	defer DelContainerForceMultyTime(c, containerName2)
+	defer icmd.RunCommand("rm", "-rf", hostdir)
+	output2 := icmd.RunCommand("ls", hostdir).Stdout()
+
+	if lsResultContains(output2, expectedDirs) {
+		c.Fatalf("volume mount in host bind mode, but \"%s\" exists", strings.Join(expectedDirs, " "))
+	}
+}
+
+func lsResultContains(res string, names []string) bool {
+	lines := strings.Split(res, "\n")
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if !utils.StringInSlice(lines, name) {
+			return false
+		}
+	}
+	return true
+}
+
 // TestRunWithHostFileVolume tests binding a host file as a volume into container.
 // fixes https://github.com/alibaba/pouch/issues/813
 func (suite *PouchRunVolumeSuite) TestRunWithHostFileVolume(c *check.C) {
 	// first create a file on the host
 	filepath := "/tmp/TestRunWithHostFileVolume.md"
 	icmd.RunCommand("touch", filepath).Assert(c, icmd.Success)
+	defer icmd.RunCommand("rm", "-f", filepath)
 
 	cname := "TestRunWithHostFileVolume"
 	res := command.PouchRun("run", "-d", "--name", cname, "-v",
@@ -100,7 +162,7 @@ func (suite *PouchRunVolumeSuite) TestRunWithVolumesFrom(c *check.C) {
 	res.Assert(c, icmd.Success)
 
 	// stop container1
-	command.PouchRun("stop", containerName1).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", containerName1).Assert(c, icmd.Success)
 
 	// run container2
 	res = command.PouchRun("run", "-d",
@@ -133,7 +195,7 @@ func (suite *PouchRunVolumeSuite) TestRunWithVolumesDestinationNotEmpty(c *check
 	// is `/opt/cni` which is not empty in the image. We should still be able to see
 	// the data in the image's `/opt/cni` when the volume is mounted.
 	// Details refer to: https://github.com/alibaba/pouch/issues/1739
-	image := "calico/cni:v3.1.3"
+	image := environment.CniRepo + ":" + environment.CniTag
 	containerName := "volumesDestinationNotEmpty"
 
 	// For the workdir of image `calico/cni:v3.1.3` is `/opt/cni/bin`,
@@ -165,7 +227,7 @@ func (suite *PouchRunVolumeSuite) TestRunWithVolumesFromWithDupclicate(c *check.
 	res.Assert(c, icmd.Success)
 
 	// stop container1
-	command.PouchRun("stop", containerName1).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", containerName1).Assert(c, icmd.Success)
 
 	// run container2
 	res = command.PouchRun("run", "-d",
@@ -195,6 +257,9 @@ func (suite *PouchRunVolumeSuite) TestRunWithVolumesFromWithDupclicate(c *check.
 func (suite *PouchRunVolumeSuite) TestRunWithVolumesFromDifferentSources(c *check.C) {
 	// TODO: build the image with volume
 	imageWithVolume := "registry.hub.docker.com/shaloulcy/busybox:with-volume"
+	if environment.IsAliKernel() {
+		imageWithVolume = "reg.docker.alibaba-inc.com/pouch/busybox:with-volume"
+	}
 	containerName1 := "TestRunWithVolumesFromImage"
 	containerName2 := "TestRunWithVolumesFromContainerAndImage"
 
@@ -326,6 +391,82 @@ func (suite *PouchRunVolumeSuite) TestRunWithDiskQuota(c *check.C) {
 			strings.Contains(line, "2048000") {
 			found = true
 			break
+		}
+	}
+
+	c.Assert(found, check.Equals, true)
+}
+
+func (suite *PouchRunVolumeSuite) TestRunCopyDataWithDR(c *check.C) {
+	cname := "TestRunCopyDataWithDR_Container"
+	vname := "TestRunCopyDataWithDR_Volume"
+
+	command.PouchRun("volume", "create", "-n", vname).Assert(c, icmd.Success)
+	defer command.PouchRun("volume", "rm", vname)
+
+	command.PouchRun("run", "-d", "--name", cname,
+		"-v", vname+":/var/spool:dr",
+		"-v", vname+":/var:dr",
+		"-v", vname+":/data", busyboxImage, "top").Assert(c, icmd.Success)
+	defer command.PouchRun("rm", "-vf", cname)
+
+	res := command.PouchRun("exec", cname, "ls", "/var")
+	res.Assert(c, icmd.Success)
+	if !strings.Contains(res.Stdout(), "spool") ||
+		!strings.Contains(res.Stdout(), "www") {
+		c.Fatal("no copy image data, miss spool and www directory")
+	}
+
+	res = command.PouchRun("exec", cname, "ls", "/var/spool")
+	res.Assert(c, icmd.Success)
+	if !strings.Contains(res.Stdout(), "mail") {
+		c.Fatal("no copy image data, miss mail directory")
+	}
+}
+
+func (suite *PouchRunVolumeSuite) TestRunVolumesFromWithDR(c *check.C) {
+	vName := "TestRunVolumesFromWithDR_Volume"
+	cName := "TestRunVolumesFromWithDR_Container"
+	cNameBak := "TestRunVolumesFromWithDR_Container_bak"
+
+	// create volume
+	command.PouchRun("volume", "create", "-n", vName).Assert(c, icmd.Success)
+	defer command.PouchRun("volume", "rm", vName)
+
+	// run bak container
+	command.PouchRun("run", "-d", "--name", cNameBak,
+		"-v", vName+":/var:dr",
+		"-v", vName+":/data", busyboxImage, "top").Assert(c, icmd.Success)
+
+	var bakRemoved bool
+	defer func() {
+		if !bakRemoved {
+			command.PouchRun("rm", "-vf", cNameBak)
+		}
+	}()
+
+	// stop bak container
+	command.PouchRun("stop", "-t", "1", cNameBak).Assert(c, icmd.Success)
+
+	// run new container with volumes-from
+	command.PouchRun("run", "-d", "--name", cName,
+		"--volumes-from", cNameBak, busyboxImage, "top").Assert(c, icmd.Success)
+	defer command.PouchRun("rm", "-vf", cName)
+
+	// remove bak container
+	command.PouchRun("rm", "-vf", cNameBak).Assert(c, icmd.Success)
+	bakRemoved = true
+
+	// check inspect mountpoint mode
+	ctr, err := apiClient.ContainerGet(context.Background(), cName)
+	if err != nil {
+		c.Fatalf("failed to get container info, err(%v)", err)
+	}
+
+	var found bool
+	for _, m := range ctr.Mounts {
+		if m.Destination == "/var" && m.Mode == "dr" {
+			found = true
 		}
 	}
 

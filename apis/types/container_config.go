@@ -77,6 +77,9 @@ type ContainerConfig struct {
 	// MAC address of the container.
 	MacAddress string `json:"MacAddress,omitempty"`
 
+	// Masks over the provided paths inside the container.
+	MaskedPaths []string `json:"MaskedPaths"`
+
 	// net priority.
 	NetPriority int64 `json:"NetPriority,omitempty"`
 
@@ -94,6 +97,9 @@ type ContainerConfig struct {
 	// By default, a quota ID is mapped to only one container. And one quota ID can include several mountpoint.
 	//
 	QuotaID string `json:"QuotaID,omitempty"`
+
+	// Set the provided paths as RO inside the container.
+	ReadonlyPaths []string `json:"ReadonlyPaths"`
 
 	// Whether to start container in rich container mode. (default false)
 	Rich bool `json:"Rich,omitempty"`
@@ -123,6 +129,7 @@ type ContainerConfig struct {
 	StopSignal string `json:"StopSignal,omitempty"`
 
 	// Timeout to stop a container in seconds.
+	// Minimum: 0
 	StopTimeout *int64 `json:"StopTimeout,omitempty"`
 
 	// Attach standard streams to a TTY, including `stdin` if it is not closed.
@@ -155,6 +162,10 @@ func (m *ContainerConfig) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateRichMode(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateStopTimeout(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -271,6 +282,19 @@ func (m *ContainerConfig) validateRichMode(formats strfmt.Registry) error {
 
 	// value enum
 	if err := m.validateRichModeEnum("RichMode", "body", m.RichMode); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *ContainerConfig) validateStopTimeout(formats strfmt.Registry) error {
+
+	if swag.IsZero(m.StopTimeout) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("StopTimeout", "body", int64(*m.StopTimeout), 0, false); err != nil {
 		return err
 	}
 

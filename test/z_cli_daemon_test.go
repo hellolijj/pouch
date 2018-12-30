@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/test/command"
@@ -16,7 +20,7 @@ import (
 	"github.com/gotestyourself/gotestyourself/icmd"
 )
 
-// PouchDaemonSuite is the test suite fo daemon.
+// PouchDaemonSuite is the test suite for daemon.
 type PouchDaemonSuite struct{}
 
 func init() {
@@ -32,7 +36,7 @@ func (suite *PouchDaemonSuite) SetUpTest(c *check.C) {
 func (suite *PouchDaemonSuite) TestDaemonCgroupParent(c *check.C) {
 	dcfg, err := StartDefaultDaemonDebug("--cgroup-parent=tmp")
 	if err != nil {
-		c.Skip("deamon start failed")
+		c.Skip("daemon start failed")
 	}
 
 	// Must kill it, as we may loose the pid in next call.
@@ -205,7 +209,7 @@ func (suite *PouchDaemonSuite) TestDaemonConfigFileAndCli(c *check.C) {
 	c.Assert(err, check.IsNil)
 }
 
-// TestDaemonInvalideArgs tests invalid args in deamon return error
+// TestDaemonInvalideArgs tests invalid args in daemon return error
 func (suite *PouchDaemonSuite) TestDaemonInvalideArgs(c *check.C) {
 	_, err := StartDefaultDaemon("--config=xxx")
 	c.Assert(err, check.NotNil)
@@ -321,7 +325,7 @@ func (suite *PouchDaemonSuite) TestDaemonLabel(c *check.C) {
 	dcfg, err := StartDefaultDaemonDebug("--label", "a=b")
 	// Start a test daemon with test args.
 	if err != nil {
-		c.Skip("deamon start failed.")
+		c.Skip("daemon start failed.")
 	}
 	// Must kill it, as we may loose the pid in next call.
 	defer dcfg.KillDaemon()
@@ -336,7 +340,7 @@ func (suite *PouchDaemonSuite) TestDaemonLabelDup(c *check.C) {
 	dcfg, err := StartDefaultDaemonDebug("--label", "a=b", "--label", "a=b")
 	// Start a test daemon with test args.
 	if err != nil {
-		c.Skip("deamon start failed.")
+		c.Skip("daemon start failed.")
 	}
 	// Must kill it, as we may loose the pid in next call.
 	defer dcfg.KillDaemon()
@@ -379,7 +383,7 @@ func (suite *PouchDaemonSuite) TestDaemonCriEnabled(c *check.C) {
 	c.Assert(err, check.IsNil)
 
 	result := RunWithSpecifiedDaemon(dcfg, "info")
-	err = util.PartialEqual(result.Combined(), "CriEnabled:  true")
+	err = util.PartialEqual(result.Combined(), "CriEnabled: true")
 	c.Assert(err, check.IsNil)
 
 	defer dcfg.KillDaemon()
@@ -501,4 +505,100 @@ func (suite *PouchDaemonSuite) TestUpdateDaemonOffline(c *check.C) {
 
 	ret := RunWithSpecifiedDaemon(&cfg, "info")
 	ret.Assert(c, icmd.Success)
+}
+
+func ensureContainerNotExist(dcfg *daemon.Config, cname string) error {
+	_ = RunWithSpecifiedDaemon(dcfg, "rm", "-f", cname)
+	return nil
+}
+
+// TestRecoverContainerWhenHostDown tests when the host down, the pouchd still can
+// recover the container whose restart policy is always .
+func (suite *PouchDaemonSuite) TestRecoverContainerWhenHostDown(c *check.C) {
+	dcfg, err := StartDefaultDaemonDebug()
+	//Start a test daemon with test args.
+	if err != nil {
+		c.Skip("daemon start failed")
+	}
+	defer dcfg.KillDaemon()
+
+	cname := "TestRecoverContainerWhenHostDown"
+	ensureContainerNotExist(dcfg, cname)
+
+	// prepare test image
+	result := RunWithSpecifiedDaemon(dcfg, "pull", busyboxImage)
+	if result.ExitCode != 0 {
+		dcfg.DumpLog()
+		c.Fatalf("pull image failed, err: %v", result)
+	}
+
+	result = RunWithSpecifiedDaemon(dcfg, "run", "-d", "--name", cname, "--restart", "always", busyboxImage, "top")
+	if result.ExitCode != 0 {
+		dcfg.DumpLog()
+		c.Fatalf("run container failed, err: %v", result)
+	}
+	defer ensureContainerNotExist(dcfg, cname)
+
+	// get the container init process id
+	pidStr := RunWithSpecifiedDaemon(dcfg, "inspect", "-f", "{{.State.Pid}}", cname).Stdout()
+
+	// get parent pid of container init process
+	output, err := exec.Command("ps", "-o", "ppid=", "-p", strings.TrimSpace(pidStr)).Output()
+	if err != nil {
+		c.Errorf("failed to get parent pid of container %s: output: %s err: %v", cname, string(output), err)
+	}
+	// imitate the host down
+	// first kill the daemon
+	dcfg.KillDaemon()
+
+	// second kill the container's process
+	ppid, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	if err != nil {
+		dcfg.DumpLog()
+		c.Fatalf("failed to convert pid string %s to int: %v", output, err)
+	}
+	syscall.Kill(ppid, syscall.SIGKILL)
+
+	// restart the daemon
+	err = RestartDaemon(dcfg)
+	c.Assert(err, check.IsNil)
+
+	// wait container started again or timeout error
+	check := make(chan struct{})
+	timeout := make(chan bool, 1)
+	// set timeout to wait container started
+	go func() {
+		time.Sleep(10 * time.Second)
+		timeout <- true
+	}()
+
+	// check whether container started
+	go func() {
+		for {
+			data := RunWithSpecifiedDaemon(dcfg, "inspect", cname).Stdout()
+			cInfo := []types.ContainerJSON{}
+			if err := json.Unmarshal([]byte(data), &cInfo); err != nil {
+				c.Fatalf("failed to decode inspect output: %v", err)
+			}
+
+			if len(cInfo) == 0 || cInfo[0].State == nil {
+				continue
+			}
+
+			if string(cInfo[0].State.Status) == "running" {
+				check <- struct{}{}
+				break
+			}
+
+			fmt.Printf("container %s status: %s\n", cInfo[0].ID, string(cInfo[0].State.Status))
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
+	select {
+	case <-check:
+	case <-timeout:
+		dcfg.DumpLog()
+		c.Fatalf("failed to wait container running")
+	}
 }

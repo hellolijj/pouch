@@ -40,7 +40,7 @@ func (p *Local) StoreMode(ctx driver.Context) driver.VolumeStoreMode {
 }
 
 // Create a local volume.
-func (p *Local) Create(ctx driver.Context, id types.VolumeID) (*types.Volume, error) {
+func (p *Local) Create(ctx driver.Context, id types.VolumeContext) (*types.Volume, error) {
 	ctx.Log.Debugf("Local create volume: %s", id.Name)
 
 	dataPath := defaultDataPath
@@ -55,16 +55,24 @@ func (p *Local) Create(ctx driver.Context, id types.VolumeID) (*types.Volume, er
 
 	// parse the mount path.
 	if dir, ok := id.Options["mount"]; ok {
-		mountPath = path.Join(dir, id.Name)
+		mountPath = dir
 	}
 
 	// parse the size.
-	if value, ok := id.Options["opt.size"]; ok {
-		sizeInt, err := bytefmt.ToMegabytes(value)
+	s := ""
+	for _, k := range []string{"size", "opt.size", "Size", "opt.Size"} {
+		var ok bool
+		s, ok = id.Options[k]
+		if ok {
+			break
+		}
+	}
+	if s != "" {
+		sizeInt, err := bytefmt.ToBytes(s)
 		if err != nil {
 			return nil, err
 		}
-		size = strconv.Itoa(int(sizeInt)) + "M"
+		size = strconv.Itoa(int(sizeInt))
 	}
 
 	// create the volume path
@@ -76,7 +84,7 @@ func (p *Local) Create(ctx driver.Context, id types.VolumeID) (*types.Volume, er
 		return nil, fmt.Errorf("mount path is not a dir %s", mountPath)
 	}
 
-	return types.NewVolumeFromID(mountPath, size, id), nil
+	return types.NewVolumeFromContext(mountPath, size, id), nil
 }
 
 // Remove a local volume.
@@ -95,15 +103,21 @@ func (p *Local) Remove(ctx driver.Context, v *types.Volume) error {
 func (p *Local) Path(ctx driver.Context, v *types.Volume) (string, error) {
 	ctx.Log.Debugf("Local volume mount path: %s", v.Name)
 
+	if mp := v.Path(); mp != "" {
+		return mp, nil
+	}
+
 	mountPath := v.Option("mount")
 	if mountPath == "" {
-		mountPath = defaultDataPath
+		mountPath = path.Join(defaultDataPath, v.Name)
 		if p.DataPath != "" {
-			mountPath = p.DataPath
+			mountPath = path.Join(p.DataPath, v.Name)
 		}
 	}
 
-	return path.Join(mountPath, v.Name), nil
+	v.SetPath(mountPath)
+
+	return mountPath, nil
 }
 
 // Options returns local volume's options.

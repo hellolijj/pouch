@@ -36,7 +36,7 @@ func (m *Message) ExitTime() time.Time {
 type watch struct {
 	sync.Mutex
 	containers map[string]*containerPack
-	hooks      []func(string, *Message) error
+	hooks      []func(string, *Message, func() error) error
 
 	// containerdDead to specify whether containerd process is dead
 	containerdDead bool
@@ -92,28 +92,36 @@ func (w *watch) add(pack *containerPack) {
 		// not the grpc client executing this parts of code.
 		pack.client.Produce(1)
 
-		if _, err := pack.task.Delete(context.Background()); err != nil {
-			logrus.Errorf("failed to delete task, container id: %s: %v", pack.id, err)
-		}
-
-		if err := pack.container.Delete(context.Background()); err != nil {
-			logrus.Errorf("failed to delete container, container id: %s: %v", pack.id, err)
-		}
-
 		msg := &Message{
 			err:      status.Error(),
 			exitCode: status.ExitCode(),
 			exitTime: status.ExitTime(),
 		}
 
+		// NOTE: cleanup action should be taken only once!
+		var cleanupOnce sync.Once
+		cleanupFunc := func() error {
+			cleanupOnce.Do(func() {
+				if _, err := pack.task.Delete(context.Background()); err != nil {
+					logrus.Errorf("failed to delete task, container id: %s: %v", pack.id, err)
+				}
+
+				if err := pack.container.Delete(context.Background()); err != nil {
+					logrus.Errorf("failed to delete container, container id: %s: %v", pack.id, err)
+				}
+			})
+			return nil
+		}
+
 		if !pack.skipStopHooks {
 			for _, hook := range w.hooks {
-				if err := hook(pack.id, msg); err != nil {
+				if err := hook(pack.id, msg, cleanupFunc); err != nil {
 					logrus.Errorf("failed to execute the exit hooks: %v", err)
 					break
 				}
 			}
 		}
+		cleanupFunc()
 
 		pack.ch <- msg
 

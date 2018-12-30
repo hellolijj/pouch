@@ -15,7 +15,7 @@ Volume includes these modules is as following:
 
 The relationship between each module is as following:
 
-![pouch_volume_architecture | center | 710x515 ](../docs/static_files/pouch_volume_architecture.png)
+![pouch_volume_architecture | center | 710x515 ](../../docs/static_files/pouch_volume_architecture.png)
 
 ### VolumeManager
 
@@ -52,26 +52,26 @@ Core provides these functions is as following:
 
 ```go
 // GetVolume return a volume's info with specified name, If not errors.
-func (c *Core) GetVolume(id types.VolumeID) (*types.Volume, error)
+func (c *Core) GetVolume(id types.VolumeContext) (*types.Volume, error)
 
 // CreateVolume use to create a volume, if failed, will return error info.
-func (c *Core) CreateVolume(id types.VolumeID) error
+func (c *Core) CreateVolume(id types.VolumeContext) error
 
 // ListVolumeName return the name of all volumes only.
 // Param 'labels' use to filter the volume's names, only return those you want.
 func (c *Core) ListVolumeName(labels map[string]string) ([]string, error)
 
 // RemoveVolume remove volume from storage and meta information, if not success return error.
-func (c *Core) RemoveVolume(id types.VolumeID) error
+func (c *Core) RemoveVolume(id types.VolumeContext) error
 
 // VolumePath return the path of volume on node host.
-func (c *Core) VolumePath(id types.VolumeID) (string, error)
+func (c *Core) VolumePath(id types.VolumeContext) (string, error)
 
 // AttachVolume to enable a volume on local host.
-func (c *Core) AttachVolume(id types.VolumeID, extra map[string]string) (*types.Volume, error)
+func (c *Core) AttachVolume(id types.VolumeContext, extra map[string]string) (*types.Volume, error)
 
 // DetachVolume to disable a volume on local host.
-func (c *Core) DetachVolume(id types.VolumeID, extra map[string]string) (*types.Volume, error)
+func (c *Core) DetachVolume(id types.VolumeContext, extra map[string]string) (*types.Volume, error)
 ```
 
 ### Driver
@@ -127,11 +127,11 @@ type Formator interface {
 
 ### Modules
 
-As of now, PouchContainer volume supports the following types of storage: local, tmpfs, ceph. If you want to add a new driver, you can refer to the sample code: [demo](volume/examples/demo/demo.go)
+As of now, PouchContainer volume supports the following types of storage: local, tmpfs.
 
 ## How to use volume
 
-As of now, volume supports the following operations: create/remove/list/inspect, for more details, please refer: [Volume Cli](docs/commandline/pouch_volume.md)
+As of now, volume supports the following operations: create/remove/list/inspect, for more details, please refer: [Volume Cli](../../docs/commandline/pouch_volume.md)
 
 ## Volume roadmap
 

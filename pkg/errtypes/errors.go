@@ -29,14 +29,14 @@ var (
 	// ErrNotImplemented represents that the function is not implemented.
 	ErrNotImplemented = errorType{codeNotImplemented, "not implemented"}
 
-	// ErrVolumeInUse represents that volume in use.
-	ErrVolumeInUse = errorType{codeInUse, "volume is in use"}
-
-	// ErrVolumeNotFound represents that no such volume.
-	ErrVolumeNotFound = errorType{codeNotFound, "no such volume"}
+	// ErrInUse represents that object is using.
+	ErrInUse = errorType{codeInUse, "in use"}
 
 	// ErrNotModified represents that the resource is not modified
 	ErrNotModified = errorType{codeNotModified, "not modified"}
+
+	// ErrPreCheckFailed represents that failed to pre check.
+	ErrPreCheckFailed = errorType{codePreCheckFailed, "pre check failed"}
 )
 
 const (
@@ -50,6 +50,12 @@ const (
 	codeNotImplemented
 	codeInUse
 	codeNotModified
+	codePreCheckFailed
+
+	// volume error code
+	codeVolumeExisted
+	codeVolumeDriverNotFound
+	codeVolumeMetaNotFound
 )
 
 type errorType struct {
@@ -86,9 +92,14 @@ func IsInUse(err error) bool {
 	return checkError(err, codeInUse)
 }
 
-// IsNotModified checks the error is not modified erro or not.
+// IsNotModified checks the error is not modified error or not.
 func IsNotModified(err error) bool {
 	return checkError(err, codeNotModified)
+}
+
+// IsPreCheckFailed checks the error is failed to pre check or not.
+func IsPreCheckFailed(err error) bool {
+	return checkError(err, codePreCheckFailed)
 }
 
 func checkError(err error, code int) bool {

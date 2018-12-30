@@ -2,14 +2,30 @@ package metrics
 
 import (
 	"fmt"
+	"net/http"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
 	namespace = "engine"
 )
+
+var (
+	prometheusRegistry *prometheus.Registry
+	prometheusHandler  http.Handler
+	registerMetrics    sync.Once
+)
+
+func init() {
+	prometheusRegistry = prometheus.NewRegistry()
+	prometheusHandler = promhttp.HandlerFor(prometheusRegistry, promhttp.HandlerOpts{})
+	registerDefaultMetrics(prometheusRegistry)
+}
 
 // SinceInMicroseconds gets the time since the specified start in microseconds.
 func SinceInMicroseconds(start time.Time) float64 {
@@ -62,4 +78,22 @@ func NewLabelTimer(subsystem, name, help string, labels ...string) *prometheus.H
 			Help:        help,
 			ConstLabels: nil,
 		}, labels)
+}
+
+// GetPrometheusRegistry return a resigtry of Prometheus.
+func GetPrometheusRegistry() *prometheus.Registry {
+	return prometheusRegistry
+}
+
+// GetPrometheusHandler return the prometheus handler.
+func GetPrometheusHandler() http.Handler {
+	return prometheusHandler
+}
+
+func registerDefaultMetrics(registry *prometheus.Registry) {
+	//Register the default metrics to the registry in prometheus.
+	registerMetrics.Do(func() {
+		registry.MustRegister(prometheus.NewProcessCollector(os.Getpid(), ""))
+		registry.MustRegister(prometheus.NewGoCollector())
+	})
 }

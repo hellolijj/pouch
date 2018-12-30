@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,8 +14,10 @@ import (
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/httputils"
+	"github.com/alibaba/pouch/pkg/streams"
 	"github.com/alibaba/pouch/pkg/utils"
 	"github.com/alibaba/pouch/pkg/utils/filters"
+	util_metrics "github.com/alibaba/pouch/pkg/utils/metrics"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/gorilla/mux"
@@ -23,9 +26,9 @@ import (
 )
 
 func (s *Server) createContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	label := "create"
-	metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
+	label := util_metrics.ActionCreateLabel
 	defer func(start time.Time) {
+		metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
 		metrics.ContainerActionsTimer.WithLabelValues(label).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
@@ -35,12 +38,13 @@ func (s *Server) createContainer(ctx context.Context, rw http.ResponseWriter, re
 	if err := json.NewDecoder(reader).Decode(config); err != nil {
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
 	}
+
+	logCreateOptions("container", config)
+
 	// validate request body
 	if err := config.Validate(strfmt.NewFormats()); err != nil {
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
 	}
-
-	logCreateOptions("container", config)
 
 	name := req.FormValue("name")
 	//consider set specific id by url params
@@ -97,6 +101,14 @@ func (s *Server) getContainer(ctx context.Context, rw http.ResponseWriter, req *
 		},
 		Mounts:          mounts,
 		NetworkSettings: c.NetworkSettings,
+		Path:            c.Path,
+		Args:            c.Args,
+		ResolvConfPath:  c.ResolvConfPath,
+		HostnamePath:    c.HostnamePath,
+		HostsPath:       c.HostsPath,
+		Driver:          c.Driver,
+		MountLabel:      c.MountLabel,
+		ProcessLabel:    c.ProcessLabel,
 	}
 
 	return EncodeResponse(rw, http.StatusOK, container)
@@ -157,9 +169,9 @@ func (s *Server) getContainers(ctx context.Context, rw http.ResponseWriter, req 
 }
 
 func (s *Server) startContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	label := "start"
-	metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
+	label := util_metrics.ActionStartLabel
 	defer func(start time.Time) {
+		metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
 		metrics.ContainerActionsTimer.WithLabelValues(label).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
@@ -186,9 +198,9 @@ func (s *Server) restartContainer(ctx context.Context, rw http.ResponseWriter, r
 		t   int
 		err error
 	)
-	label := "restart"
-	metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
+	label := util_metrics.ActionRestartLabel
 	defer func(start time.Time) {
+		metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
 		metrics.ContainerActionsTimer.WithLabelValues(label).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
@@ -216,9 +228,9 @@ func (s *Server) stopContainer(ctx context.Context, rw http.ResponseWriter, req 
 		err error
 	)
 
-	label := "stop"
-	metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
+	label := util_metrics.ActionStopLabel
 	defer func(start time.Time) {
+		metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
 		metrics.ContainerActionsTimer.WithLabelValues(label).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
@@ -263,9 +275,9 @@ func (s *Server) unpauseContainer(ctx context.Context, rw http.ResponseWriter, r
 }
 
 func (s *Server) renameContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	label := "rename"
-	metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
+	label := util_metrics.ActionRenameLabel
 	defer func(start time.Time) {
+		metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
 		metrics.ContainerActionsTimer.WithLabelValues(label).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
@@ -284,33 +296,47 @@ func (s *Server) renameContainer(ctx context.Context, rw http.ResponseWriter, re
 
 func (s *Server) attachContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
 	name := mux.Vars(req)["name"]
-
 	_, upgrade := req.Header["Upgrade"]
 
-	hijacker, ok := rw.(http.Hijacker)
-	if !ok {
-		return fmt.Errorf("not a hijack connection, container: %s", name)
+	var (
+		err     error
+		closeFn func() error
+		attach  = new(streams.AttachConfig)
+		stdin   io.ReadCloser
+		stdout  io.Writer
+	)
+
+	stdin, stdout, closeFn, err = openHijackConnection(rw)
+	if err != nil {
+		return err
 	}
 
-	attach := &mgr.AttachConfig{
-		Hijack:  hijacker,
-		Stdin:   req.FormValue("stdin") == "1",
-		Stdout:  true,
-		Stderr:  true,
-		Upgrade: upgrade,
+	// close hijack stream
+	defer closeFn()
+
+	if upgrade {
+		fmt.Fprintf(stdout, "HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.raw-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n")
+	} else {
+		fmt.Fprintf(stdout, "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.docker.raw-stream\r\n\r\n")
 	}
 
-	if err := s.ContainerMgr.Attach(ctx, name, attach); err != nil {
-		// TODO handle error
-	}
+	attach.UseStdin = httputils.BoolValue(req, "stdin")
+	attach.Stdin = stdin
+	attach.UseStdout = true
+	attach.Stdout = stdout
+	attach.UseStderr = true
+	attach.Stderr = stdout
 
+	if err := s.ContainerMgr.AttachContainerIO(ctx, name, attach); err != nil {
+		stdout.Write([]byte(err.Error() + "\r\n"))
+	}
 	return nil
 }
 
 func (s *Server) updateContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	label := "update"
-	metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
+	label := util_metrics.ActionUpdateLabel
 	defer func(start time.Time) {
+		metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
 		metrics.ContainerActionsTimer.WithLabelValues(label).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
@@ -330,6 +356,10 @@ func (s *Server) updateContainer(ctx context.Context, rw http.ResponseWriter, re
 	if err := json.NewDecoder(reader).Decode(config); err != nil {
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
 	}
+	// validate request body
+	if err := config.Validate(strfmt.NewFormats()); err != nil {
+		return httputils.NewHTTPError(err, http.StatusBadRequest)
+	}
 
 	name := mux.Vars(req)["name"]
 
@@ -344,9 +374,9 @@ func (s *Server) updateContainer(ctx context.Context, rw http.ResponseWriter, re
 }
 
 func (s *Server) upgradeContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	label := "upgrade"
-	metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
+	label := util_metrics.ActionUpgradeLabel
 	defer func(start time.Time) {
+		metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
 		metrics.ContainerActionsTimer.WithLabelValues(label).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
@@ -450,9 +480,9 @@ func (s *Server) resizeContainer(ctx context.Context, rw http.ResponseWriter, re
 }
 
 func (s *Server) removeContainers(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	label := "delete"
-	metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
+	label := util_metrics.ActionDeleteLabel
 	defer func(start time.Time) {
+		metrics.ContainerActionsCounter.WithLabelValues(label).Inc()
 		metrics.ContainerActionsTimer.WithLabelValues(label).Observe(time.Since(start).Seconds())
 	}(time.Now())
 

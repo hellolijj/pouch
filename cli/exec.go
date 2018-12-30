@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/alibaba/pouch/apis/types"
+	"github.com/alibaba/pouch/pkg/ioutils"
 
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/sirupsen/logrus"
@@ -26,6 +27,7 @@ type ExecCommand struct {
 	Detach      bool
 	User        string
 	Envs        []string
+	Privileged  bool
 }
 
 // Init initializes ExecCommand command.
@@ -53,6 +55,7 @@ func (e *ExecCommand) addFlags() {
 	flagSet.BoolVarP(&e.Interactive, "interactive", "i", false, "Open container's STDIN")
 	flagSet.StringVarP(&e.User, "user", "u", "", "Username or UID (format: <name|uid>[:<group|gid>])")
 	flagSet.StringArrayVarP(&e.Envs, "env", "e", []string{}, "Set environment variables")
+	flagSet.BoolVar(&e.Privileged, "privileged", false, "Give extended privileges to the exec process")
 }
 
 // runExec is the entry of ExecCommand command.
@@ -72,7 +75,7 @@ func (e *ExecCommand) runExec(args []string) error {
 		AttachStderr: !e.Detach,
 		AttachStdout: !e.Detach,
 		AttachStdin:  !e.Detach && e.Interactive,
-		Privileged:   false,
+		Privileged:   e.Privileged,
 		User:         e.User,
 		Env:          e.Envs,
 	}
@@ -145,9 +148,12 @@ func holdHijackConnection(ctx context.Context, conn net.Conn, reader *bufio.Read
 	go func() {
 		if stdin {
 			io.Copy(conn, os.Stdin)
+			// close write if receive CTRL-D
+			if cw, ok := conn.(ioutils.CloseWriter); ok {
+				cw.CloseWrite()
+			}
 		}
 
-		// TODO: close write side of conn
 		close(stdinDone)
 	}()
 

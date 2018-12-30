@@ -111,13 +111,6 @@ func (h *httpStreamHandler) getStreamPair(requestID string) (*httpStreamPair, bo
 	return pair, true
 }
 
-// hasStreamPair returns a bool indicating if a stream pair for requestID exists.
-func (h *httpStreamHandler) hasStreamPair(requestID string) bool {
-	_, ok := h.streamPairs.Get(requestID).Result()
-
-	return ok
-}
-
 // removeStreamPair removes the stream pair identified by requestID from streamPairs.
 func (h *httpStreamHandler) removeStreamPair(requestID string) {
 	h.streamPairs.Remove(requestID)
@@ -189,7 +182,7 @@ func (h *httpStreamHandler) portForward(ctx context.Context, p *httpStreamPair) 
 
 	logrus.Infof("portforward of cri: invoking forwarder.PortForward for port %s of request %s", portString, p.requestID)
 	err := h.forwarder.PortForward(ctx, h.pod, int32(port), p.dataStream)
-	logrus.Infof("portforward of cri: done invoking forwarder.PortForward for port %s", portString, p.requestID)
+	logrus.Infof("portforward of cri: done invoking forwarder.PortForward for port %s of request %s", portString, p.requestID)
 
 	if err != nil {
 		msg := fmt.Sprintf("portforward of cri: error forwarding port %d to pod %s: %v", port, h.pod, err)

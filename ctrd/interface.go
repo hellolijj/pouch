@@ -26,6 +26,7 @@ type APIClient interface {
 
 	Version(ctx context.Context) (containerd.Version, error)
 	Cleanup() error
+	Plugins(ctx context.Context, filters []string) ([]Plugin, error)
 }
 
 // ContainerAPIClient provides access to containerd container features.
@@ -61,7 +62,7 @@ type ContainerAPIClient interface {
 	// UpdateResources updates the configurations of a container.
 	UpdateResources(ctx context.Context, id string, resources types.Resources) error
 	// SetExitHooks specified the handlers of container exit.
-	SetExitHooks(hooks ...func(string, *Message) error)
+	SetExitHooks(hooks ...func(string, *Message, func() error) error)
 	// SetExecExitHooks specified the handlers of exec process exit.
 	SetExecExitHooks(hooks ...func(string, *Message) error)
 	// Events subscribe containerd events through an event subscribe client.
@@ -78,8 +79,8 @@ type ImageAPIClient interface {
 	GetImage(ctx context.Context, ref string) (containerd.Image, error)
 	// ListImages returns the list of containerd.Image filtered by the given conditions.
 	ListImages(ctx context.Context, filter ...string) ([]containerd.Image, error)
-	// PullImage pulls image by the given reference.
-	PullImage(ctx context.Context, ref string, authConfig *types.AuthConfig, stream *jsonstream.JSONStream) (containerd.Image, error)
+	// FetchImage fetchs image content by the given reference.
+	FetchImage(ctx context.Context, ref string, authConfig *types.AuthConfig, stream *jsonstream.JSONStream) (containerd.Image, error)
 	// RemoveImage removes the image by the given reference.
 	RemoveImage(ctx context.Context, ref string) error
 	// ImportImage creates a set of images by tarstream.
@@ -104,8 +105,9 @@ type SnapshotAPIClient interface {
 	// GetSnapshotUsage returns the resource usage of an active or committed snapshot
 	// excluding the usage of parent snapshots.
 	GetSnapshotUsage(ctx context.Context, id string) (snapshots.Usage, error)
-	// WalkSnapshot walk all snapshots. For each snapshot, the function will be called.
-	WalkSnapshot(ctx context.Context, fn func(context.Context, snapshots.Info) error) error
+	// WalkSnapshot walk all snapshots in specific snapshotter. If not set specific snapshotter,
+	// it will be set to current snapshotter. For each snapshot, the function will be called.
+	WalkSnapshot(ctx context.Context, snapshotter string, fn func(context.Context, snapshots.Info) error) error
 	// CreateCheckpoint creates a checkpoint from a running container
 	CreateCheckpoint(ctx context.Context, id string, checkpointDir string, exit bool) error
 }

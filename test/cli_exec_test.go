@@ -2,8 +2,11 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/alibaba/pouch/test/command"
 	"github.com/alibaba/pouch/test/environment"
@@ -51,6 +54,18 @@ func (suite *PouchExecSuite) TestExecCommand(c *check.C) {
 	// ...
 	if out := res.Combined(); !strings.Contains(out, "etc") {
 		c.Fatalf("unexpected output %s expected %s\n", out, name)
+	}
+}
+
+func (suite *PouchExecSuite) TestExecNoCommand(c *check.C) {
+	cname := "TestExecNoCommand"
+	command.PouchRun("run", "-d", "--name", cname, busyboxImage, "sleep", "100000").Assert(c, icmd.Success)
+	defer DelContainerForceMultyTime(c, cname)
+
+	res := command.PouchRun("exec", cname)
+	expectedError := "requires at least 2 arg(s), only received 1"
+	if out := res.Combined(); !strings.Contains(out, expectedError) {
+		c.Fatalf("unexpected output %s, expected %s", out, expectedError)
 	}
 }
 
@@ -130,7 +145,7 @@ func (suite *PouchExecSuite) TestExecStoppedContainer(c *check.C) {
 	defer DelContainerForceMultyTime(c, name)
 	res.Assert(c, icmd.Success)
 
-	command.PouchRun("stop", name).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", name).Assert(c, icmd.Success)
 
 	out := command.PouchRun("exec", name, "echo", "test").Stderr()
 	if !strings.Contains(out, "failed") {
@@ -173,7 +188,7 @@ func (suite *PouchExecSuite) TestExecAfterContainerRestart(c *check.C) {
 	defer DelContainerForceMultyTime(c, name)
 	res.Assert(c, icmd.Success)
 
-	command.PouchRun("stop", name).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", name).Assert(c, icmd.Success)
 
 	command.PouchRun("start", name).Assert(c, icmd.Success)
 
@@ -278,4 +293,39 @@ func (suite *PouchExecSuite) TestExecWithTty(c *check.C) {
 	attachRes := command.PouchRun("exec", "-i", "-t", name, "ls")
 	errString := attachRes.Stderr()
 	assert.Equal(c, errString, "Error: the input device is not a TTY\n")
+}
+
+// TestExecForCloseIO test CloseIO works.
+func (suite *PouchExecSuite) TestExecForCloseIO(c *check.C) {
+	name := "TestExecForCloseIO"
+	defer DelContainerForceMultyTime(c, name)
+
+	command.PouchRun("run", "-d", "--name", name, busyboxImage, "top").Assert(c, icmd.Success)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
+	cmdLine := fmt.Sprintf("echo 1 | %s exec -i %s sh -c 'cat && echo hello'", environment.PouchBinary, name)
+	out, err := exec.CommandContext(ctx, "bash", "-c", cmdLine).Output()
+	c.Assert(err, check.IsNil)
+	c.Assert(string(out), check.Equals, "1\nhello\n")
+}
+
+// TestExecWithPrivileged tests exec with --privileged can work
+func (suite *PouchExecSuite) TestExecWithPrivileged(c *check.C) {
+	name := "TestExecWithPrivileged"
+	defer DelContainerForceMultyTime(c, name)
+
+	command.PouchRun("run", "-d", "--name", name, "--cap-drop=ALL", busyboxImage, "top").Assert(c, icmd.Success)
+
+	// without --privileged, exec should fails
+	command.PouchRun("exec", name, "sh", "-c", "mknod /tmp/sda b 8 16").Assert(c, icmd.Expected{
+		ExitCode: 1,
+		Err:      "Operation not permitted",
+	})
+
+	command.PouchRun("exec", "--privileged", name, "sh", "-c", "mknod /tmp/sdb b 8 16").Assert(c, icmd.Success)
+	ret := command.PouchRun("exec", name, "ls", "/tmp/sdb")
+	ret.Assert(c, icmd.Success)
+	c.Assert(ret.Stdout(), check.Equals, "/tmp/sdb\n")
 }

@@ -17,6 +17,7 @@ import (
 	runtime "github.com/alibaba/pouch/cri/apis/v1alpha2"
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/errtypes"
+	"github.com/alibaba/pouch/pkg/randomid"
 	"github.com/alibaba/pouch/pkg/utils"
 
 	"github.com/containerd/cgroups"
@@ -46,6 +47,23 @@ func toCriTimestamp(t string) (int64, error) {
 	}
 
 	return result.UnixNano(), nil
+}
+
+// generateSandboxID generates an ID for newly created sandbox meta.
+// We must ensure that this ID has not used yet.
+func (c *CriManager) generateSandboxID(ctx context.Context) (string, error) {
+	var id string
+	for {
+		id = randomid.Generate()
+		_, err := c.ContainerMgr.Get(ctx, id)
+		if err != nil {
+			if errtypes.IsNotfound(err) {
+				break
+			}
+			return "", err
+		}
+	}
+	return id, nil
 }
 
 // generateEnvList converts KeyValue list to a list of strings, in the form of
@@ -246,8 +264,43 @@ func applySandboxLinuxOptions(hc *apitypes.HostConfig, lc *runtime.LinuxPodSandb
 	return nil
 }
 
+// applySandboxRuntimeHandler applies the runtime of container specified by the caller.
+func (c *CriManager) applySandboxRuntimeHandler(sandboxMeta *SandboxMeta, runtimehandler string, annotations map[string]string) error {
+	if runtimehandler == "" {
+		// apply the annotation of io.kubernetes.runtime which specify the runtime of container.
+		// NOTE: Deprecated
+		runtime, ok := annotations[anno.KubernetesRuntime]
+		if !ok {
+			return nil
+		}
+		runtimehandler = runtime
+	}
+	sandboxMeta.Runtime = runtimehandler
+	if err := c.SandboxStore.Put(sandboxMeta); err != nil {
+		return err
+	}
+	return nil
+}
+
+// applySandboxAnnotations applies the annotations extended.
+func (c *CriManager) applySandboxAnnotations(sandboxMeta *SandboxMeta, annotations map[string]string) error {
+	// apply the annotation of io.kubernetes.lxcfs.enabled
+	// which specify whether to enable lxcfs for a container.
+	if lxcfsEnabled, ok := annotations[anno.LxcfsEnabled]; ok {
+		enableLxcfs, err := strconv.ParseBool(lxcfsEnabled)
+		if err != nil {
+			return err
+		}
+		sandboxMeta.LxcfsEnabled = enableLxcfs
+		if err := c.SandboxStore.Put(sandboxMeta); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // makeSandboxPouchConfig returns apitypes.ContainerCreateConfig based on runtime.PodSandboxConfig.
-func makeSandboxPouchConfig(config *runtime.PodSandboxConfig, image string) (*apitypes.ContainerCreateConfig, error) {
+func makeSandboxPouchConfig(config *runtime.PodSandboxConfig, runtimehandler, image string) (*apitypes.ContainerCreateConfig, error) {
 	// Merge annotations and labels because pouch supports only labels.
 	labels := makeLabels(config.GetLabels(), config.GetAnnotations())
 	// Apply a label to distinguish sandboxes from regular containers.
@@ -256,9 +309,8 @@ func makeSandboxPouchConfig(config *runtime.PodSandboxConfig, image string) (*ap
 	hc := &apitypes.HostConfig{}
 
 	// Apply runtime options.
-	if annotations := config.GetAnnotations(); annotations != nil {
-		hc.Runtime = annotations[anno.KubernetesRuntime]
-	}
+	// NOTE: whether to add UntrustedWorkload
+	hc.Runtime = runtimehandler
 
 	createConfig := &apitypes.ContainerCreateConfig{
 		ContainerConfig: apitypes.ContainerConfig{
@@ -455,28 +507,23 @@ func setupSandboxFiles(sandboxRootDir string, config *runtime.PodSandboxConfig) 
 
 // setupPodNetwork sets up the network of PodSandbox and return the netnsPath of PodSandbox
 // and do nothing when networkNamespaceMode equals runtime.NamespaceMode_NODE.
-func (c *CriManager) setupPodNetwork(ctx context.Context, id string, config *runtime.PodSandboxConfig) (string, error) {
+func (c *CriManager) setupPodNetwork(ctx context.Context, id string, config *runtime.PodSandboxConfig) error {
 	container, err := c.ContainerMgr.Get(ctx, id)
 	if err != nil {
-		return "", err
+		return err
 	}
 	netnsPath := containerNetns(container)
 	if netnsPath == "" {
-		return "", fmt.Errorf("failed to find network namespace path for sandbox %q", id)
+		return fmt.Errorf("failed to find network namespace path for sandbox %q", id)
 	}
 
-	err = c.CniMgr.SetUpPodNetwork(&ocicni.PodNetwork{
+	return c.CniMgr.SetUpPodNetwork(&ocicni.PodNetwork{
 		Name:         config.GetMetadata().GetName(),
 		Namespace:    config.GetMetadata().GetNamespace(),
 		ID:           id,
 		NetNS:        netnsPath,
 		PortMappings: toCNIPortMappings(config.GetPortMappings()),
 	})
-	if err != nil {
-		return "", err
-	}
-
-	return netnsPath, nil
 }
 
 // Container related tool functions.
@@ -512,11 +559,6 @@ func parseContainerName(name string) (*runtime.ContainerMetadata, error) {
 		Name:    parts[1],
 		Attempt: attempt,
 	}, nil
-}
-
-// makeupLogPath makes up the log path of container from log directory and its metadata.
-func makeupLogPath(logDirectory string, metadata *runtime.ContainerMetadata) string {
-	return filepath.Join(logDirectory, metadata.Name, fmt.Sprintf("%d.log", metadata.Attempt))
 }
 
 // modifyContainerNamespaceOptions apply namespace options for container.
@@ -732,9 +774,7 @@ func applyContainerSecurityContext(lc *runtime.LinuxContainerConfig, podSandboxI
 // Apply Linux-specific options if applicable.
 func (c *CriManager) updateCreateConfig(createConfig *apitypes.ContainerCreateConfig, config *runtime.ContainerConfig, sandboxConfig *runtime.PodSandboxConfig, sandboxMeta *SandboxMeta) error {
 	// Apply runtime options.
-	if sandboxMeta.Runtime != "" {
-		createConfig.HostConfig.Runtime = sandboxMeta.Runtime
-	}
+	createConfig.HostConfig.Runtime = sandboxMeta.Runtime
 
 	createConfig.HostConfig.EnableLxcfs = sandboxMeta.LxcfsEnabled
 
@@ -854,23 +894,25 @@ func containerNetns(container *mgr.Container) string {
 
 // imageToCriImage converts pouch image API to CRI image API.
 func imageToCriImage(image *apitypes.ImageInfo) (*runtime.Image, error) {
-	uid := &runtime.Int64Value{}
-	imageUID, username := getUserFromImageUser(image.Config.User)
-	if imageUID != nil {
-		uid.Value = *imageUID
+	if image == nil || image.Config == nil {
+		return nil, fmt.Errorf("unable to convert a nil pointer to a runtime API image")
 	}
-
 	size := uint64(image.Size)
 	// TODO: improve type ImageInfo to include RepoTags and RepoDigests.
-	return &runtime.Image{
+	runtimeImage := &runtime.Image{
 		Id:          image.ID,
 		RepoTags:    image.RepoTags,
 		RepoDigests: image.RepoDigests,
 		Size_:       size,
-		Uid:         uid,
-		Username:    username,
 		Volumes:     parseVolumesFromPouch(image.Config.Volumes),
-	}, nil
+	}
+
+	imageUID, username := getUserFromImageUser(image.Config.User)
+	if imageUID != nil {
+		runtimeImage.Uid = &runtime.Int64Value{Value: *imageUID}
+	}
+	runtimeImage.Username = username
+	return runtimeImage, nil
 }
 
 // ensureSandboxImageExists pulls the image when it's not present.
@@ -919,25 +961,6 @@ func parseUserFromImageUser(id string) string {
 	}
 	// no group, just return the id
 	return id
-}
-
-func (c *CriManager) attachLog(logPath string, containerID string, openStdin bool) error {
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
-	if err != nil {
-		return fmt.Errorf("failed to create container for opening log file failed: %v", err)
-	}
-	// Attach to the container to get log.
-	attachConfig := &mgr.AttachConfig{
-		Stdin:      openStdin,
-		Stdout:     true,
-		Stderr:     true,
-		CriLogFile: f,
-	}
-	err = c.ContainerMgr.Attach(context.Background(), containerID, attachConfig)
-	if err != nil {
-		return fmt.Errorf("failed to attach to container %q to get its log: %v", containerID, err)
-	}
-	return nil
 }
 
 func (c *CriManager) getContainerMetrics(ctx context.Context, meta *mgr.Container) (*runtime.ContainerStats, error) {

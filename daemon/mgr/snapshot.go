@@ -112,7 +112,7 @@ func (s *SnapshotsSyncer) Start() {
 func (s *SnapshotsSyncer) Sync() error {
 	start := time.Now().UnixNano()
 	var infos []snapshots.Info
-	err := s.client.WalkSnapshot(context.Background(), func(ctx context.Context, info snapshots.Info) error {
+	err := s.client.WalkSnapshot(context.Background(), "", func(ctx context.Context, info snapshots.Info) error {
 		infos = append(infos, info)
 		return nil
 	})
@@ -137,7 +137,7 @@ func (s *SnapshotsSyncer) Sync() error {
 		}
 		usage, err := s.client.GetSnapshotUsage(context.Background(), info.Name)
 		if err != nil {
-			logrus.Errorf("failed to get usage for snapshot %q: %v", info.Name, err)
+			logrus.Warnf("failed to get usage for snapshot %q: %v", info.Name, err)
 			continue
 		}
 		sn.Size = uint64(usage.Size)

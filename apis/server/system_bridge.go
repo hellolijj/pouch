@@ -11,8 +11,10 @@ import (
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/pkg/httputils"
 	"github.com/alibaba/pouch/pkg/utils"
+	"github.com/alibaba/pouch/pkg/utils/metrics"
 
 	"github.com/docker/docker/pkg/ioutils"
+	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -41,18 +43,28 @@ func (s *Server) version(ctx context.Context, rw http.ResponseWriter, req *http.
 
 func (s *Server) updateDaemon(ctx context.Context, rw http.ResponseWriter, req *http.Request) (err error) {
 	cfg := &types.DaemonUpdateConfig{}
+
+	// decode request body
 	if err := json.NewDecoder(req.Body).Decode(cfg); err != nil {
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
 	}
-
-	// TODO: validate cfg in details
+	// validate request body
+	if err := cfg.Validate(strfmt.NewFormats()); err != nil {
+		return httputils.NewHTTPError(err, http.StatusBadRequest)
+	}
 
 	return s.SystemMgr.UpdateDaemon(cfg)
 }
 
 func (s *Server) auth(ctx context.Context, rw http.ResponseWriter, req *http.Request) (err error) {
 	auth := types.AuthConfig{}
+
+	// decode request body
 	if err := json.NewDecoder(req.Body).Decode(&auth); err != nil {
+		return httputils.NewHTTPError(err, http.StatusBadRequest)
+	}
+	// validate request body
+	if err := auth.Validate(strfmt.NewFormats()); err != nil {
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
 	}
 
@@ -141,6 +153,11 @@ func (s *Server) events(ctx context.Context, rw http.ResponseWriter, req *http.R
 			return nil
 		}
 	}
+}
+
+func (s *Server) metrics(ctx context.Context, rw http.ResponseWriter, req *http.Request) (err error) {
+	metrics.GetPrometheusHandler().ServeHTTP(rw, req)
+	return nil
 }
 
 func eventTime(formTime string) (time.Time, error) {

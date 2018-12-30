@@ -98,6 +98,23 @@ type CriPlugin interface {
 }
 ```
 
+### api plugin
+
+* update handler, enable to add, delete, modify the PouchContainer's HTTP API handler.
+
+Defined as follow:
+
+```
+import "github.com/alibaba/pouch/apis/server/types"
+// APIPlugin provide the ability to extend PouchContainer HTTP API and change how handler behave.
+type APIPlugin interface {
+	// The default handler of each API would be passed in while starting HTTP server.
+	// UpdateHandler could register extra HTTP API to PouchContainer server,
+	// change the behavior of the default handler.
+	UpdateHandler([]*types.HandlerSpec) []*types.HandlerSpec
+}
+```
+
 ## Example
 
 ### How to write
@@ -116,10 +133,10 @@ In `daemon_hook.go` define your plugin object, struct is `type daemonPlugin stru
 
 In `init` function to register your plugin, now we provide 4 plugin to register:
 
-    * `RegisterContainerPlugin`
-    * `RegisterDaemonPlugin`
-    * `RegisterCriPlugin`
-    * `RegisterVolumePlugin`
+* `RegisterContainerPlugin`
+* `RegisterDaemonPlugin`
+* `RegisterCriPlugin`
+* `RegisterVolumePlugin`
 
 In my plugin, we use `RegisterDaemonPlugin` to register a daemon plugin into pouch daemon.
 

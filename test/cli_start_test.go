@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/alibaba/pouch/test/command"
@@ -45,7 +46,7 @@ func (suite *PouchStartSuite) TestStartCommand(c *check.C) {
 
 	command.PouchRun("start", name).Assert(c, icmd.Success)
 
-	command.PouchRun("stop", name).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", name).Assert(c, icmd.Success)
 }
 
 // TestStartInTTY tests "pouch start -i" work.
@@ -73,7 +74,7 @@ func (suite *PouchStartSuite) TestStartInTTY(c *check.C) {
 	c.Assert(err, check.IsNil)
 	c.Assert(strings.TrimSpace(echo), check.Equals, msg)
 
-	command.PouchRun("stop", name)
+	command.PouchRun("stop", "-t", "1", name)
 }
 
 // TestStartInWrongWay runs start command in wrong way.
@@ -105,7 +106,7 @@ func (suite *PouchStartSuite) TestStartWithEnv(c *check.C) {
 		c.Errorf("failed to set env: %s, %s", env, output)
 	}
 
-	command.PouchRun("stop", name).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", name).Assert(c, icmd.Success)
 }
 
 // TestStartWithEntrypoint starts a container with  entrypoint.
@@ -171,7 +172,7 @@ func (suite *PouchStartSuite) TestStartWithHostname(c *check.C) {
 		c.Errorf("failed to set hostname: %s, %s", hostname, output)
 	}
 
-	command.PouchRun("stop", name).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", name).Assert(c, icmd.Success)
 }
 
 // TestStartWithSysctls starts a container with sysctls.
@@ -188,7 +189,7 @@ func (suite *PouchStartSuite) TestStartWithSysctls(c *check.C) {
 		c.Errorf("failed to start a container with sysctls: %s", output)
 	}
 
-	command.PouchRun("stop", name).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", name).Assert(c, icmd.Success)
 }
 
 // TestStartWithAppArmor starts a container with security option AppArmor.
@@ -203,7 +204,7 @@ func (suite *PouchStartSuite) TestStartWithAppArmor(c *check.C) {
 
 	// TODO: do the test more strictly with effective AppArmor profile.
 
-	command.PouchRun("stop", name).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", name).Assert(c, icmd.Success)
 }
 
 // TestStartWithSeccomp starts a container with security option seccomp.
@@ -218,7 +219,7 @@ func (suite *PouchStartSuite) TestStartWithSeccomp(c *check.C) {
 
 	// TODO: do the test more strictly with effective seccomp profile.
 
-	command.PouchRun("stop", name).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", name).Assert(c, icmd.Success)
 }
 
 // TestStartWithCapability starts a container with capability.
@@ -309,15 +310,27 @@ func (suite *PouchStartSuite) TestStartFromCheckpoint(c *check.C) {
 	defer os.RemoveAll(tmpDir)
 	checkpoint := "cp0"
 	command.PouchRun("checkpoint", "create", "--checkpoint-dir", tmpDir, name, checkpoint).Assert(c, icmd.Success)
+	// check criu image files have been dumped into checkpoint-dir, pouch create a description json,
+	// so there should be more than 1 files
+	dirs, err := ioutil.ReadDir(filepath.Join(tmpDir, checkpoint))
+	c.Assert(err, check.IsNil)
+	if len(dirs) < 2 {
+		c.Errorf("failed to dump criu image for container %s", name)
+	}
 
 	restoredContainer := "restoredContainer"
 	defer DelContainerForceMultyTime(c, restoredContainer)
 	// image busybox not have /proc directory, we need to start busybox image and stop it
 	// make /proc exist, then we can restore successful
 	command.PouchRun("run", "-d", "--name", restoredContainer, busyboxImage).Assert(c, icmd.Success)
-	command.PouchRun("stop", restoredContainer).Assert(c, icmd.Success)
+	command.PouchRun("stop", "-t", "1", restoredContainer).Assert(c, icmd.Success)
 
 	command.PouchRun("start", "--checkpoint-dir", tmpDir, "--checkpoint", checkpoint, restoredContainer).Assert(c, icmd.Success)
+
+	result := command.PouchRun("exec", restoredContainer, "sh", "-c", "ps -ef | grep top").Assert(c, icmd.Success)
+	if !strings.Contains(result.Stdout(), "top") {
+		c.Error("restored container should have top process")
+	}
 }
 
 // TestStartWithTty tests running container with -tty flag and attach stdin in a non-tty client.
@@ -344,7 +357,7 @@ func (suite *PouchStartSuite) TestStartMultiContainers(c *check.C) {
 	res := command.PouchRun("start", containernames[0], containernames[1])
 	res.Assert(c, icmd.Success)
 
-	res = command.PouchRun("stop", containernames[0], containernames[1])
+	res = command.PouchRun("stop", "-t", "1", containernames[0], containernames[1])
 	res.Assert(c, icmd.Success)
 }
 

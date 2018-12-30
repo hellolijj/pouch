@@ -17,7 +17,7 @@ func TestReadLogMessagesWithRemoveFileInFollowMode(t *testing.T) {
 	defer f.Close()
 	defer os.RemoveAll(f.Name())
 
-	jf, err := NewJSONLogFile(f.Name(), 0640, nil)
+	jf, err := NewJSONLogFile(f.Name(), 0640, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error during create JSONLogFile: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestReadLogMessagesWithRemoveFileInFollowMode(t *testing.T) {
 	os.RemoveAll(f.Name())
 
 	select {
-	case _, _ = <-watcher.Msgs:
+	case <-watcher.Msgs:
 	case <-time.After(250 * time.Millisecond):
 		// NOTE: watchTimeout is 200ms
 		t.Fatal("expected watcher.Msgs has been closed after removed file, but it's still alive")
@@ -52,7 +52,7 @@ func TestReadLogMessagesForEmptyFileWithoutFollow(t *testing.T) {
 	defer f.Close()
 	defer os.RemoveAll(f.Name())
 
-	jf, err := NewJSONLogFile(f.Name(), 0644, nil)
+	jf, err := NewJSONLogFile(f.Name(), 0644, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error during create JSONLogFile: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestReadLogMessagesForEmptyFileWithoutFollow(t *testing.T) {
 	<-time.After(100 * time.Millisecond)
 
 	select {
-	case _, _ = <-watcher.Msgs:
+	case <-watcher.Msgs:
 	case <-time.After(100 * time.Millisecond):
 		t.Fatalf("expected watcher.Msgs has been closed after removed file, but it's still alive")
 	}

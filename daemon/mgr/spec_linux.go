@@ -68,6 +68,18 @@ func populatePlatform(ctx context.Context, c *Container, specWrapper *SpecWrappe
 		s.Linux.MaskedPaths = nil
 	}
 
+	// Apply masked paths if specified.
+	if c.MaskedPaths != nil {
+		s.Linux.MaskedPaths = make([]string, len(c.MaskedPaths))
+		copy(s.Linux.MaskedPaths, c.MaskedPaths)
+	}
+
+	// Apply readonly paths if specified.
+	if c.ReadonlyPaths != nil {
+		s.Linux.ReadonlyPaths = make([]string, len(c.ReadonlyPaths))
+		copy(s.Linux.ReadonlyPaths, c.ReadonlyPaths)
+	}
+
 	// start to setup linux seccomp
 	if err := setupSeccomp(ctx, c, s); err != nil {
 		return err
@@ -156,8 +168,8 @@ func getWeightDevice(devs []*types.WeightDevice) ([]specs.LinuxWeightDevice, err
 		d := specs.LinuxWeightDevice{
 			Weight: &dev.Weight,
 		}
-		d.Major = int64(stat.Rdev / 256)
-		d.Minor = int64(stat.Rdev % 256)
+		d.Major = int64(stat.Rdev >> 8)
+		d.Minor = int64(stat.Rdev & 255)
 		weightDevice = append(weightDevice, d)
 	}
 
@@ -176,8 +188,8 @@ func getThrottleDevice(devs []*types.ThrottleDevice) ([]specs.LinuxThrottleDevic
 		d := specs.LinuxThrottleDevice{
 			Rate: dev.Rate,
 		}
-		d.Major = int64(stat.Rdev / 256)
-		d.Minor = int64(stat.Rdev % 256)
+		d.Major = int64(stat.Rdev >> 8)
+		d.Minor = int64(stat.Rdev & 255)
 		ThrottleDevice = append(ThrottleDevice, d)
 	}
 
@@ -373,43 +385,15 @@ func setupNamespaces(ctx context.Context, c *Container, specWrapper *SpecWrapper
 	return setupUtsNamespace(ctx, c, specWrapper)
 }
 
-// isEmpty indicates whether namespace mode is empty.
-func isEmpty(mode string) bool {
-	return mode == ""
-}
-
-// isNone indicates whether container's namespace mode is set to "none".
-func isNone(mode string) bool {
-	return mode == "none"
-}
-
 // isHost indicates whether the container shares the host's corresponding namespace.
 func isHost(mode string) bool {
 	return mode == "host"
-}
-
-// isShareable indicates whether the containers namespace can be shared with another container.
-func isShareable(mode string) bool {
-	return mode == "shareable"
 }
 
 // isContainer indicates whether the container uses another container's corresponding namespace.
 func isContainer(mode string) bool {
 	parts := strings.SplitN(mode, ":", 2)
 	return len(parts) > 1 && parts[0] == "container"
-}
-
-// isPrivate indicates whether the container uses its own namespace.
-func isPrivate(ns specs.LinuxNamespaceType, mode string) bool {
-	switch ns {
-	case specs.IPCNamespace:
-		return mode == "private"
-	case specs.NetworkNamespace, specs.PIDNamespace:
-		return !(isHost(mode) || isContainer(mode))
-	case specs.UserNamespace, specs.UTSNamespace:
-		return !(isHost(mode))
-	}
-	return false
 }
 
 // connectedContainer is the id or name of the container whose namespace this container share with.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -304,7 +305,9 @@ func IsFileExist(file string) bool {
 	return false
 }
 
-// StringSliceEqual compare two string slice, ignore the order.
+// StringSliceEqual compares two string slice, ignore the order.
+// If all items in the two string slice are equal, this function will return true
+// even though there may have duplicate elements in the slice, otherwise reture false.
 func StringSliceEqual(s1, s2 []string) bool {
 	if s1 == nil && s2 == nil {
 		return true
@@ -318,14 +321,24 @@ func StringSliceEqual(s1, s2 []string) bool {
 		return false
 	}
 
-	for _, s := range s1 {
-		if !StringInSlice(s2, s) {
-			return false
-		}
+	// mapKeys to remember keys that exist in s1
+	mapKeys := map[string]int{}
+
+	// first list all items in s1
+	for _, v := range s1 {
+		mapKeys[v]++
 	}
 
-	for _, s := range s2 {
-		if !StringInSlice(s1, s) {
+	// second list all items in s2
+	for _, v := range s2 {
+		mapKeys[v]--
+
+		// we may get -1 in two cases:
+		// 1. the item exists in the s2, but not in the s1;
+		// 2. the item exists both in s1 and s2, but has different copies.
+		// Under the condition that the length of slices are equals,
+		// so we can quickly return false.
+		if mapKeys[v] < 0 {
 			return false
 		}
 	}
@@ -360,4 +373,64 @@ func StringDefault(s string, val string) string {
 		return s
 	}
 	return val
+}
+
+// ToStringMap changes the map[string]interface{} to map[string]string,
+// If the interface is not string, it will be ignore.
+func ToStringMap(in map[string]interface{}) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string)
+	for k, v := range in {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
+// StringSliceDelete deletes the `del` string in string slice.
+func StringSliceDelete(in []string, del string) []string {
+	if in == nil {
+		return nil
+	}
+
+	out := make([]string, 0)
+	for _, value := range in {
+		if value != del {
+			out = append(out, value)
+		}
+	}
+
+	return out
+}
+
+// ResolveHomeDir resolve a target path from home dir, home dir must not be a relative
+// path, must not be a file, create directory if not exist, returns the target
+// directory if directory is symlink.
+func ResolveHomeDir(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("home dir should not be empty")
+	}
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("home dir %s should be an absolute path", path)
+	}
+
+	// create directory for home-dir if is not exist, or check if exist home-dir
+	// is directory.
+	if pinfo, err := os.Stat(path); err != nil {
+		if err := os.MkdirAll(path, 0666); err != nil {
+			return "", fmt.Errorf("failed to mkdir for home dir %s: %v", path, err)
+		}
+	} else if !pinfo.Mode().IsDir() {
+		return "", fmt.Errorf("home dir %s should be directory", path)
+	}
+
+	realPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to acquire real path for %s: %s", path, err)
+	}
+
+	return realPath, nil
 }

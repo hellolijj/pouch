@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"strings"
 
 	"github.com/alibaba/pouch/apis/types"
@@ -26,17 +25,14 @@ func init() {
 func (suite *PouchVolumeSuite) SetUpSuite(c *check.C) {
 	SkipIfFalse(c, environment.IsLinux)
 
+	environment.PruneAllVolumes(apiClient)
+	environment.PruneAllContainers(apiClient)
 	PullImage(c, busyboxImage)
 }
 
 // TestVolumeWorks tests "pouch volume" work.
 func (suite *PouchVolumeSuite) TestVolumeWorks(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeWorks"
 
 	command.PouchRun("volume", "create", "--name", funcname).Assert(c, icmd.Success)
 	command.PouchRun("volume", "inspect", funcname).Assert(c, icmd.Success)
@@ -48,30 +44,24 @@ func (suite *PouchVolumeSuite) TestVolumeWorks(c *check.C) {
 	}
 	err := icmd.RunCommand("stat", DefaultVolumeMountPath+"/"+funcname).Compare(expct)
 	c.Assert(err, check.IsNil)
-
 }
 
 // TestVolumeCreateLocalDriverAndSpecifyMountPoint tests "pouch volume create" works.
 func (suite *PouchVolumeSuite) TestVolumeCreateLocalDriverAndSpecifyMountPoint(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeCreateLocalDriverAndSpecifyMountPoint"
 
-	res := command.PouchRun("volume", "create", "--name", funcname, "--driver", "local", "-o", "mount=/tmp")
+	res := command.PouchRun("volume", "create", "--name", funcname, "--driver", "local", "-o", "mount=/tmp/"+funcname)
 	res.Assert(c, icmd.Success)
 
 	res = command.PouchRun("volume", "inspect", funcname)
 	res.Assert(c, icmd.Success)
 	output := res.Stdout()
 	if !strings.Contains(output, "local") {
-		c.Errorf("failed to get the backend driver, expect:local, acturally: %s", output)
+		c.Errorf("failed to get the backend driver, expect:local, actually: %s", output)
 	}
 
 	if !strings.Contains(output, "/tmp/"+funcname) {
-		c.Errorf("failed to get the mountpoint, expect:/tmp/%s, acturally: %s", funcname, output)
+		c.Errorf("failed to get the mountpoint, expect:/tmp, actually: %s", output)
 	}
 
 	command.PouchRun("volume", "remove", funcname).Assert(c, icmd.Success)
@@ -79,12 +69,7 @@ func (suite *PouchVolumeSuite) TestVolumeCreateLocalDriverAndSpecifyMountPoint(c
 
 // TestVolumeCreateWithMountPointExitsFile tests when MountPoint is an existing file, returns error.
 func (suite *PouchVolumeSuite) TestVolumeCreateWithMountPointExitsFile(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeCreateWithMountPointExitsFile"
 
 	expct := icmd.Expected{
 		ExitCode: 1,
@@ -94,7 +79,7 @@ func (suite *PouchVolumeSuite) TestVolumeCreateWithMountPointExitsFile(c *check.
 	icmd.RunCommand("touch", "/tmp/"+funcname)
 
 	err := command.PouchRun("volume", "create", "--name", funcname,
-		"--driver", "local", "-o", "mount=/tmp").Compare(expct)
+		"--driver", "local", "-o", "mount=/tmp/"+funcname).Compare(expct)
 	defer command.PouchRun("volume", "remove", funcname)
 
 	c.Assert(err, check.IsNil)
@@ -102,12 +87,7 @@ func (suite *PouchVolumeSuite) TestVolumeCreateWithMountPointExitsFile(c *check.
 
 // TestVolumeCreateWrongDriver tests using wrong driver returns error.
 func (suite *PouchVolumeSuite) TestVolumeCreateWrongDriver(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeCreateWrongDriver"
 
 	expct := icmd.Expected{
 		ExitCode: 1,
@@ -123,12 +103,7 @@ func (suite *PouchVolumeSuite) TestVolumeCreateWrongDriver(c *check.C) {
 
 // TestVolumeCreateWithLabel tests creating volume with label.
 func (suite *PouchVolumeSuite) TestVolumeCreateWithLabel(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeCreateWithLabel"
 
 	command.PouchRun("volume", "create", "--name", funcname, "--label", "test=foo").Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "remove", funcname)
@@ -136,12 +111,7 @@ func (suite *PouchVolumeSuite) TestVolumeCreateWithLabel(c *check.C) {
 
 // TestVolumeCreateWithSelector tests creating volume with --selector.
 func (suite *PouchVolumeSuite) TestVolumeCreateWithSelector(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeCreateWithSelector"
 
 	command.PouchRun("volume", "create", "--name", funcname, "--selector", "test=foo").Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "remove", funcname)
@@ -149,12 +119,7 @@ func (suite *PouchVolumeSuite) TestVolumeCreateWithSelector(c *check.C) {
 
 // TestVolumeCreateWithSize tests creating volume with -o opt.size=xxx.
 func (suite *PouchVolumeSuite) TestVolumeCreateWithSize(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeCreateWithSize"
 
 	command.PouchRun("volume", "create", "--name", funcname, "-o", "opt.size=1048576").Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "remove", funcname)
@@ -162,12 +127,7 @@ func (suite *PouchVolumeSuite) TestVolumeCreateWithSize(c *check.C) {
 
 // TestVolumeInspectFormat tests the inspect format of volume works.
 func (suite *PouchVolumeSuite) TestVolumeInspectFormat(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeInspectFormat"
 
 	command.PouchRun("volume", "create", "--name", funcname).Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "remove", funcname)
@@ -180,17 +140,11 @@ func (suite *PouchVolumeSuite) TestVolumeInspectFormat(c *check.C) {
 
 	output = command.PouchRun("volume", "inspect", "-f", "{{.Name}}", funcname).Stdout()
 	c.Assert(output, check.Equals, fmt.Sprintf("%s\n", funcname))
-
 }
 
 // TestVolumeUsingByContainer tests the inspect format of volume works.
 func (suite *PouchVolumeSuite) TestVolumeUsingByContainer(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeUsingByContainer"
 
 	volumeName := "volume_" + funcname
 	command.PouchRun("volume", "create", "--name", volumeName).Assert(c, icmd.Success)
@@ -206,12 +160,7 @@ func (suite *PouchVolumeSuite) TestVolumeUsingByContainer(c *check.C) {
 
 // TestVolumePluginUsingByContainer tests creating container using the plugin volume.
 func (suite *PouchVolumeSuite) TestVolumePluginUsingByContainer(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumePluginUsingByContainer"
 	volumeName := "volume_" + funcname
 	command.PouchRun("volume", "create", "--name", volumeName, "-d", "local-persist", "-o", "mountpoint=/data/volume1").Assert(c, icmd.Success)
 	command.PouchRun("run", "-d", "-v", volumeName+":/mnt", "--name", funcname, busyboxImage, "top").Assert(c, icmd.Success)
@@ -224,18 +173,15 @@ func (suite *PouchVolumeSuite) TestVolumePluginUsingByContainer(c *check.C) {
 
 // TestVolumeBindReplaceMode tests the volume "direct replace(dr)" mode.
 func (suite *PouchVolumeSuite) TestVolumeBindReplaceMode(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeBindReplaceMode"
 
 	volumeName := "volume_" + funcname
 	command.PouchRun("volume", "create", "--name", volumeName).Assert(c, icmd.Success)
-	command.PouchRun("run", "-d", "-v", volumeName+":/mnt", "-v", volumeName+":/home:dr", "--name", funcname, busyboxImage, "top").Assert(c, icmd.Success)
 	defer func() {
 		command.PouchRun("volume", "rm", volumeName)
+	}()
+	command.PouchRun("run", "-d", "-v", volumeName+":/mnt", "-v", volumeName+":/home:dr", "--name", funcname, busyboxImage, "top").Assert(c, icmd.Success)
+	defer func() {
 		command.PouchRun("rm", "-f", funcname)
 	}()
 
@@ -258,72 +204,126 @@ func (suite *PouchVolumeSuite) TestVolumeBindReplaceMode(c *check.C) {
 
 // TestVolumeList tests the volume list.
 func (suite *PouchVolumeSuite) TestVolumeList(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeList"
 
 	volumeName := "volume_" + funcname
-	volumeName1 := "volume_" + funcname + "_1"
+	volumeName1 := volumeName + "_1"
 	command.PouchRun("volume", "create", "--name", volumeName1, "-o", "opt.size=1g").Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "rm", volumeName1)
 
-	volumeName2 := "volume_" + funcname + "_2"
+	volumeName2 := volumeName + "_2"
 	command.PouchRun("volume", "create", "--name", volumeName2, "-o", "opt.size=2g").Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "rm", volumeName2)
 
-	volumeName3 := "volume_" + funcname + "_3"
+	volumeName3 := volumeName + "_3"
 	command.PouchRun("volume", "create", "--name", volumeName3, "-o", "opt.size=3g").Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "rm", volumeName3)
 
 	ret := command.PouchRun("volume", "list")
 	ret.Assert(c, icmd.Success)
 
-	for _, line := range strings.Split(ret.Stdout(), "\n") {
-		if strings.Contains(line, volumeName) {
-			if !strings.Contains(line, "local") {
-				c.Errorf("list result have no driver or name or size or mountpoint, line: %s", line)
-				break
-			}
-		}
+	lines := volumesToKV(ret.Stdout())
+	for _, line := range lines {
+		c.Assert(line[0], check.Equals, "local")
 	}
 }
 
-// TestVolumeList tests the volume list with options: size and mountpoint.
+// TestVolumeListOptions tests the volume list with options: size, mountpoint, quiet.
 func (suite *PouchVolumeSuite) TestVolumeListOptions(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestVolumeListOptions"
 
 	volumeName := "volume_" + funcname
-	volumeName1 := "volume_" + funcname + "_1"
+	volumeName1 := volumeName + "_1"
 	command.PouchRun("volume", "create", "--name", volumeName1, "-o", "opt.size=1g").Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "rm", volumeName1)
 
-	volumeName2 := "volume_" + funcname + "_2"
+	volumeName2 := volumeName + "_2"
 	command.PouchRun("volume", "create", "--name", volumeName2, "-o", "opt.size=2g").Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "rm", volumeName2)
 
-	volumeName3 := "volume_" + funcname + "_3"
+	volumeName3 := volumeName + "_3"
 	command.PouchRun("volume", "create", "--name", volumeName3, "-o", "opt.size=3g").Assert(c, icmd.Success)
 	defer command.PouchRun("volume", "rm", volumeName3)
 
+	// test --size and --mountpoint options
 	ret := command.PouchRun("volume", "list", "--size", "--mountpoint")
 	ret.Assert(c, icmd.Success)
 
-	for _, line := range strings.Split(ret.Stdout(), "\n") {
-		if strings.Contains(line, volumeName) {
-			if !strings.Contains(line, "local") ||
-				!strings.Contains(line, "M") ||
-				!strings.Contains(line, DefaultVolumeMountPath) {
-				c.Errorf("list result have no driver or name or size or mountpoint, line: %s", line)
-				break
-			}
+	lines := volumesToKV(ret.Stdout())
+	for _, line := range lines {
+		c.Assert(line[0], check.Equals, "local")
+		if !strings.Contains(line[3], DefaultVolumeMountPath) {
+			c.Errorf("error mount path, volume name : %s", line[1])
 		}
 	}
+
+	// test --quiet options
+	ret = command.PouchRun("volume", "list", "--quiet")
+	ret.Assert(c, icmd.Success)
+
+	lines = volumesToKV(ret.Stdout())
+	for _, line := range lines {
+		c.Assert(len(line), check.Equals, 1)
+		if !strings.EqualFold(line[0], volumeName1) &&
+			!strings.EqualFold(line[0], volumeName2) &&
+			!strings.EqualFold(line[0], volumeName3) {
+			c.Errorf("list volume doesn't match any existing volume name, line: %s", line)
+			break
+		}
+	}
+
+	// test filter options
+	volumeName4 := "volume_" + funcname + "4"
+	command.PouchRun("volume", "create", "--name", volumeName4, "--driver", "tmpfs", "--label", "test=foo").Assert(c, icmd.Success)
+	defer command.PouchRun("volume", "rm", volumeName4)
+
+	// test name, label, driver filter separately
+	filterArgs := []string{
+		"name=" + volumeName4,
+		"label=test",
+		"driver=tmpfs",
+	}
+
+	for _, args := range filterArgs {
+		res := command.PouchRun("volume", "list", "--filter", args)
+		res.Assert(c, icmd.Success)
+
+		lines := volumesToKV(res.Stdout())
+		c.Assert(len(lines), check.Equals, 1)
+		if _, exist := lines[volumeName4]; !exist {
+			c.Errorf("volume filter options doesn't work, filter : ", args)
+		}
+	}
+
+	// test multi volume filter
+	res := command.PouchRun("volume", "list", "--filter", filterArgs[0], "--filter", filterArgs[1], "--filter", filterArgs[2])
+	res.Assert(c, icmd.Success)
+
+	lines = volumesToKV(res.Stdout())
+	c.Assert(len(lines), check.Equals, 1)
+	if _, exist := lines[volumeName4]; !exist {
+		c.Error("volume filter options doesn't work, with all filters")
+	}
+}
+
+// volumesToKV parse the output of "pouch volume list" into key-value pair
+func volumesToKV(volumes string) map[string][]string {
+	// skip header
+	lines := strings.Split(volumes, "\n")[1:]
+
+	res := make(map[string][]string)
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		items := strings.Fields(line)
+		if len(items) > 1 {
+			res[items[1]] = items
+		} else {
+			// --quiet case
+			res[items[0]] = items
+		}
+	}
+	return res
 }

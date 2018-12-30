@@ -7,11 +7,27 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/alibaba/pouch/apis/types"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
+)
+
+const (
+	// RPrivatePropagationMode represents mount propagation rprivate.
+	RPrivatePropagationMode = "rprivate"
+	// PrivatePropagationMode represents mount propagation private.
+	PrivatePropagationMode = "private"
+	// RSharedPropagationMode represents mount propagation rshared.
+	RSharedPropagationMode = "rshared"
+	// SharedPropagationMode represents mount propagation shared.
+	SharedPropagationMode = "shared"
+	// RSlavePropagationMode represents mount propagation rslave.
+	RSlavePropagationMode = "rslave"
+	// SlavePropagationMode represents mount propagation slave.
+	SlavePropagationMode = "slave"
 )
 
 func clearReadonly(m *specs.Mount) {
@@ -39,18 +55,16 @@ func setupMounts(ctx context.Context, c *Container, s *specs.Spec) error {
 		if dup {
 			continue
 		}
-		if sm.Destination == "/dev/shm" && c.HostConfig.ShmSize != nil {
-			sm.Options = append(sm.Options, fmt.Sprintf("size=%s", strconv.FormatInt(*c.HostConfig.ShmSize, 10)))
+		if sm.Destination == "/dev/shm" && c.HostConfig.ShmSize != nil &&
+			*c.HostConfig.ShmSize != 0 {
+			for idx, v := range sm.Options {
+				if strings.Contains(v, "size=") {
+					sm.Options[idx] = fmt.Sprintf("size=%s", strconv.FormatInt(*c.HostConfig.ShmSize, 10))
+				}
+			}
 		}
 		mounts = append(mounts, sm)
 	}
-	// TODO: we can suggest containerd to add the cgroup into the default spec.
-	mounts = append(mounts, specs.Mount{
-		Destination: "/sys/fs/cgroup",
-		Type:        "cgroup",
-		Source:      "cgroup",
-		Options:     []string{"ro", "nosuid", "noexec", "nodev"},
-	})
 
 	if c.HostConfig == nil {
 		return nil
@@ -73,13 +87,14 @@ func setupMounts(ctx context.Context, c *Container, s *specs.Spec) error {
 		rootfspg := s.Linux.RootfsPropagation
 		// Set rootfs propagation, default setting is private.
 		switch pg {
-		case "shared", "rshared":
-			if rootfspg != "shared" && rootfspg != "rshared" {
-				s.Linux.RootfsPropagation = "shared"
+		case SharedPropagationMode, RSharedPropagationMode:
+			if rootfspg != SharedPropagationMode && rootfspg != RSharedPropagationMode {
+				s.Linux.RootfsPropagation = SharedPropagationMode
 			}
-		case "slave", "rslave":
-			if rootfspg != "shared" && rootfspg != "rshared" && rootfspg != "slave" && rootfspg != "rslave" {
-				s.Linux.RootfsPropagation = "rslave"
+		case SlavePropagationMode, RSlavePropagationMode:
+			if rootfspg != SharedPropagationMode && rootfspg != RSharedPropagationMode &&
+				rootfspg != SlavePropagationMode && rootfspg != RSlavePropagationMode {
+				s.Linux.RootfsPropagation = RSlavePropagationMode
 			}
 		}
 
@@ -92,10 +107,6 @@ func setupMounts(ctx context.Context, c *Container, s *specs.Spec) error {
 		}
 
 		// TODO: support copy data.
-
-		if mp.Destination == "/dev/shm" && c.HostConfig.ShmSize != nil {
-			opts = []string{fmt.Sprintf("size=%s", strconv.FormatInt(*c.HostConfig.ShmSize, 10))}
-		}
 
 		mounts = append(mounts, specs.Mount{
 			Source:      mp.Source,
@@ -113,12 +124,15 @@ func setupMounts(ctx context.Context, c *Container, s *specs.Spec) error {
 	s.Mounts = sortMounts(mounts)
 
 	if c.HostConfig.Privileged {
-		if !s.Root.Readonly {
+		for i := range s.Mounts {
 			// Clear readonly for /sys.
-			for i := range s.Mounts {
-				if s.Mounts[i].Destination == "/sys" {
-					clearReadonly(&s.Mounts[i])
-				}
+			if s.Mounts[i].Destination == "/sys" && !s.Root.Readonly {
+				clearReadonly(&s.Mounts[i])
+			}
+
+			// Clear readonly for cgroup
+			if s.Mounts[i].Type == "cgroup" {
+				clearReadonly(&s.Mounts[i])
 			}
 		}
 	}

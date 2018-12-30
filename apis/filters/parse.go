@@ -3,6 +3,7 @@ package filters
 import (
 	"encoding/json"
 	"errors"
+	"path"
 	"strings"
 )
 
@@ -34,6 +35,12 @@ func NewArgs(initialArgs ...KeyValuePair) Args {
 		args.Add(arg.Key, arg.Value)
 	}
 	return args
+}
+
+// Contains returns true if the key exists in the mapping
+func (args Args) Contains(field string) bool {
+	_, ok := args.fields[field]
+	return ok
 }
 
 // Get returns the list of values associated with the key
@@ -145,8 +152,64 @@ func FromParam(p string) (Args, error) {
 
 	raw := []byte(p)
 	err := json.Unmarshal(raw, &args)
-	if err != nil {
-		return args, err
+	return args, err
+}
+
+// FromFilterOpts parse key=value to Args string from cli opts
+func FromFilterOpts(filter []string) (Args, error) {
+	filterArgs := NewArgs()
+
+	for _, f := range filter {
+		var err error
+		filterArgs, err = ParseFlag(f, filterArgs)
+		if err != nil {
+			return filterArgs, err
+		}
 	}
-	return args, nil
+	return filterArgs, nil
+}
+
+// Validate compared the set of accepted keys against the keys in the mapping.
+// An error is returned if any mapping keys are not in the accepted set.
+func (args Args) Validate(accepted map[string]bool) error {
+	for name := range args.fields {
+		if !accepted[name] {
+			return errors.New("invalid filter " + name)
+		}
+	}
+	return nil
+}
+
+// FamiliarMatch decide the ref match the pattern or not
+func FamiliarMatch(pattern string, ref string) (bool, error) {
+	return path.Match(pattern, ref)
+}
+
+// MatchKVList returns true if all the pairs in sources exist as key=value
+// pairs in the mapping at key, or if there are no values at key.
+func (args Args) MatchKVList(key string, sources map[string]string) bool {
+	fieldValues := args.fields[key]
+
+	// do not filter if there is no filter set or cannot determine filter
+	if len(fieldValues) == 0 {
+		return true
+	}
+
+	if len(sources) == 0 {
+		return false
+	}
+
+	for value := range fieldValues {
+		attrKV := strings.SplitN(value, "=", 2)
+
+		v, ok := sources[attrKV[0]]
+		if !ok {
+			return false
+		}
+		if len(attrKV) == 2 && attrKV[1] != v {
+			return false
+		}
+	}
+
+	return true
 }

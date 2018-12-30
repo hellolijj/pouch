@@ -4,29 +4,28 @@ import (
 	"path/filepath"
 
 	"github.com/alibaba/pouch/apis/types"
-	"github.com/alibaba/pouch/daemon/containerio"
 	"github.com/alibaba/pouch/daemon/logger"
+	"github.com/alibaba/pouch/daemon/logger/jsonfile"
+	"github.com/alibaba/pouch/daemon/logger/syslog"
 
 	"github.com/sirupsen/logrus"
 )
 
-func logOptionsForContainerio(c *Container) []func(*containerio.Option) {
-	optFuncs := make([]func(*containerio.Option), 0, 1)
-
+func logOptionsForContainerio(c *Container, info logger.Info) (logger.LogDriver, error) {
 	cfg := c.HostConfig.LogConfig
 	if cfg == nil || cfg.LogDriver == types.LogConfigLogDriverNone {
-		return optFuncs
+		return nil, nil
 	}
 
 	switch cfg.LogDriver {
 	case types.LogConfigLogDriverJSONFile:
-		optFuncs = append(optFuncs, containerio.WithJSONFile())
+		return jsonfile.Init(info)
 	case types.LogConfigLogDriverSyslog:
-		optFuncs = append(optFuncs, containerio.WithSyslog())
+		return syslog.Init(info)
 	default:
 		logrus.Warnf("not support (%v) log driver yet", cfg.LogDriver)
+		return nil, nil
 	}
-	return optFuncs
 }
 
 // convContainerToLoggerInfo uses logger.Info to wrap container information.
@@ -63,5 +62,4 @@ func (mgr *ContainerManager) SetContainerLogPath(c *Container) {
 	if c.HostConfig.LogConfig.LogDriver == "json-file" {
 		c.LogPath = filepath.Join(mgr.Config.HomeDir, "containers", c.ID, "json.log")
 	}
-	return
 }

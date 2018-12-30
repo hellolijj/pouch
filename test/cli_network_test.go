@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"runtime"
 	"strings"
 	"time"
 
@@ -49,20 +48,17 @@ func (suite *PouchNetworkSuite) TestNetworkInspectFormat(c *check.C) {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 	networkID := network[0].ID
+	c.Assert(network[0].Name, check.Equals, "bridge")
+	c.Assert(network[0].Scope, check.Equals, "local")
 
 	// inspect network name by ID
-	output = command.PouchRun("network", "inspect", "-f", "{{.Name}}", networkID).Stdout()
-	c.Assert(output, check.Equals, "bridge\n")
+	output = command.PouchRun("network", "inspect", "-f", "Name: {{.Name}} Scope: {{.Scope}}", networkID).Stdout()
+	c.Assert(output, check.Equals, "Name: bridge Scope: local\n")
 }
 
 // TestNetworkDefault tests the creation of default bridge/none/host network.
 func (suite *PouchNetworkSuite) TestNetworkDefault(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestNetworkDefault"
 
 	// After pouchd is launched, default network bridge is created
 	// check the existence of default network: bridge
@@ -109,12 +105,7 @@ func (suite *PouchNetworkSuite) TestNetworkDefault(c *check.C) {
 
 // TestNetworkBridgeWorks tests bridge network works.
 func (suite *PouchNetworkSuite) TestNetworkBridgeWorks(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestNetworkBridgeWorks"
 
 	// Remove network in case there is legacy network which may impacts test.
 	defer command.PouchRun("network", "remove", funcname)
@@ -191,7 +182,7 @@ func (suite *PouchNetworkSuite) TestNetworkBridgeWorks(c *check.C) {
 	{
 		// running container is stopped, then the veth device should also been removed
 		command.PouchRun("run", "-d", "--name", funcname, "--net", funcname, busyboxImage, "top").Assert(c, icmd.Success)
-		command.PouchRun("stop", funcname).Assert(c, icmd.Success)
+		command.PouchRun("stop", "-t", "1", funcname).Assert(c, icmd.Success)
 
 		// get the ID of bridge to construct the bridge name.
 		cmd := "pouch network list |grep " + funcname + "|awk '{print $1}'"
@@ -225,12 +216,7 @@ func (suite *PouchNetworkSuite) TestNetworkBridgeWorks(c *check.C) {
 
 // TestNetworkCreateWrongDriver tests using wrong driver returns error.
 func (suite *PouchNetworkSuite) TestNetworkCreateWrongDriver(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestNetworkCreateWrongDriver"
 
 	expct := icmd.Expected{
 		ExitCode: 1,
@@ -245,54 +231,136 @@ func (suite *PouchNetworkSuite) TestNetworkCreateWrongDriver(c *check.C) {
 
 // TestNetworkCreateWithLabel tests creating network with label.
 func (suite *PouchNetworkSuite) TestNetworkCreateWithLabel(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
+	funcname := "TestNetworkCreateWithLabel"
+
+	tests := []struct {
+		name    string
+		ipv6    bool
+		gateway string
+		subnet  string
+	}{
+		{
+			name:    "IPv4",
+			ipv6:    false,
+			gateway: "192.168.3.1",
+			subnet:  "192.168.3.0/24",
+		},
 	}
 
-	gateway := "192.168.3.1"
-	subnet := "192.168.3.0/24"
+	if !environment.IsAliKernel() {
+		tests = append(tests, struct {
+			name    string
+			ipv6    bool
+			gateway string
+			subnet  string
+		}{
+			name:    "IPv6",
+			ipv6:    true,
+			gateway: "2006:db8:1::1",
+			subnet:  "2006:db8:1::1/64",
+		})
+	}
 
-	command.PouchRun("network", "create",
-		"--name", funcname,
-		"-d", "bridge",
-		"--gateway", gateway,
-		"--subnet", subnet,
-		"--label", "test=foo").Assert(c, icmd.Success)
-	defer command.PouchRun("network", "remove", funcname)
+	for _, tt := range tests {
+		funcname += tt.name
+		if tt.ipv6 {
+			command.PouchRun("network", "create",
+				"--name", funcname,
+				"-d", "bridge",
+				"--enable-ipv6",
+				"--gateway", tt.gateway,
+				"--subnet", tt.subnet,
+				"--label", "test=foo").Assert(c, icmd.Success)
+		} else {
+			command.PouchRun("network", "create",
+				"--name", funcname,
+				"-d", "bridge",
+				"--gateway", tt.gateway,
+				"--subnet", tt.subnet,
+				"--label", "test=foo").Assert(c, icmd.Success)
+		}
+		defer command.PouchRun("network", "remove", funcname)
+	}
 }
 
 // TestNetworkCreateWithOption tests creating network with option.
 func (suite *PouchNetworkSuite) TestNetworkCreateWithOption(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
+	funcname := "TestNetworkCreateWithOption"
+
+	tests := []struct {
+		name    string
+		ipv6    bool
+		gateway string
+		subnet  string
+	}{
+		{
+			name:    "IPv4",
+			ipv6:    false,
+			gateway: "192.168.4.1",
+			subnet:  "192.168.4.0/24",
+		},
 	}
 
+	if !environment.IsAliKernel() {
+		tests = append(tests, struct {
+			name    string
+			ipv6    bool
+			gateway string
+			subnet  string
+		}{
+			name:    "IPv6",
+			ipv6:    true,
+			gateway: "2007:db8:1::1",
+			subnet:  "2007:db8:1::1/64",
+		})
+	}
+
+	for _, tt := range tests {
+		funcname += tt.name
+		if tt.ipv6 {
+			command.PouchRun("network", "create",
+				"--name", funcname,
+				"-d", "bridge",
+				"--enable-ipv6",
+				"--gateway", tt.gateway,
+				"--subnet", tt.subnet,
+				"--option", "test=foo").Assert(c, icmd.Success)
+		} else {
+			command.PouchRun("network", "create",
+				"--name", funcname,
+				"-d", "bridge",
+				"--gateway", tt.gateway,
+				"--subnet", tt.subnet,
+				"--option", "test=foo").Assert(c, icmd.Success)
+		}
+		defer command.PouchRun("network", "remove", funcname)
+	}
+}
+
+// TestNetworkCreateWithIPAMOption creates network with ipam options
+func (suite *PouchNetworkSuite) TestNetworkCreateWithIPAMOption(c *check.C) {
 	gateway := "192.168.100.1"
 	subnet := "192.168.100.0/24"
-
+	networkName := "TestNetworkCreateWithIPAMOption"
 	command.PouchRun("network", "create",
-		"--name", funcname,
+		"--name", networkName,
 		"-d", "bridge",
 		"--gateway", gateway,
 		"--subnet", subnet,
-		"--option", "test=foo").Assert(c, icmd.Success)
-	defer command.PouchRun("network", "remove", funcname)
+		"--ipam-opt", "test=foo").Assert(c, icmd.Success)
+	defer command.PouchRun("network", "remove", networkName)
+	networkInfo := command.PouchRun("network", "inspect", networkName).Stdout()
+	networkJSON := []types.NetworkCreate{}
+	err := json.Unmarshal([]byte(networkInfo), &networkJSON)
+	if err != nil || len(networkJSON) == 0 {
+		c.Fatalf("fail to deserialize NetworkCreate: %v", err)
+	}
+	c.Assert(networkJSON[0].IPAM.Options["test"], check.Equals, "foo")
 }
 
 // TestNetworkCreateDup tests creating duplicate network return error.
 func (suite *PouchNetworkSuite) TestNetworkCreateDup(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestNetworkCreateDup"
 
 	expct := icmd.Expected{
 		ExitCode: 1,
@@ -333,7 +401,7 @@ func (suite *PouchNetworkSuite) TestNetworkPortMapping(c *check.C) {
 		Out:      "It works",
 	}
 
-	image := "registry.hub.docker.com/library/httpd:2"
+	image := environment.HttpdRepo + ":" + environment.HttpdTag
 
 	command.PouchRun("pull", image).Assert(c, icmd.Success)
 	command.PouchRun("run", "-d",
@@ -391,7 +459,7 @@ func (suite *PouchNetworkSuite) TestNetworkConnect(c *check.C) {
 	// create bridge network
 	command.PouchRun("network", "create",
 		"-d", "bridge",
-		"--subnet=172.18.0.0/24", "--gateway=172.18.0.1",
+		"--subnet=172.68.0.0/24", "--gateway=172.68.0.1",
 		"-o", "com.docker.network.bridge.name="+bridgeName, networkName).Assert(c, icmd.Success)
 	defer func() {
 		command.PouchRun("network", "rm", networkName).Assert(c, icmd.Success)

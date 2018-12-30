@@ -223,13 +223,15 @@ func (suite *PouchRunSuite) TestRunWithCapability(c *check.C) {
 
 // TestRunWithoutCapability tests running container with --cap-drop
 func (suite *PouchRunSuite) TestRunWithoutCapability(c *check.C) {
-	capability := "chown"
+	capability := "CHOWN"
 	name := "run-capability"
 	expt := icmd.Expected{
-		Err: "Operation not permitted",
+		ExitCode: 1,
+		Out:      "Operation not permitted",
 	}
-	command.PouchRun("run", "--name", name, "--cap-drop", capability,
+	err := command.PouchRun("run", "--name", name, "--cap-drop", capability,
 		busyboxImage, "chown", "755", "/tmp").Compare(expt)
+	c.Assert(err, check.IsNil)
 	defer DelContainerForceMultyTime(c, name)
 }
 
@@ -402,7 +404,7 @@ func (suite *PouchRunSuite) TestRunWithEnv(c *check.C) {
 	res := command.PouchRun("run", "--rm",
 		"--env", "A=a,b,c", // should not split args by comma
 		"--env", "B=b1",
-		"docker.io/library/alpine",
+		busyboxImage,
 		"sh", "-c", "echo ${A}-${B}",
 	)
 	res.Assert(c, icmd.Success)

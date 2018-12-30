@@ -15,7 +15,6 @@ import (
 	"github.com/alibaba/pouch/pkg/exec"
 	"github.com/alibaba/pouch/pkg/kernel"
 	"github.com/alibaba/pouch/pkg/system"
-
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -30,8 +29,6 @@ const (
 )
 
 var (
-	hasQuota bool
-
 	// GQuotaDriver represents global quota driver.
 	GQuotaDriver = NewQuotaDriver("")
 
@@ -122,12 +119,21 @@ func StartQuotaDriver(dir string) (string, error) {
 
 // SetSubtree is used to set quota id for directory.
 func SetSubtree(dir string, qid uint32) (uint32, error) {
+	if isRegular, err := CheckRegularFile(dir); err != nil || !isRegular {
+		logrus.Debugf("set quota skip not regular file: %s", dir)
+		return 0, err
+	}
+
 	return GQuotaDriver.SetSubtree(dir, qid)
 }
 
 // SetDiskQuota is used to set quota for directory.
 func SetDiskQuota(dir string, size string, quotaID uint32) error {
-	logrus.Infof("set disk quota, dir: (%s), size: (%s), quotaID: (%d)", dir, size, quotaID)
+	logrus.Infof("set disk quota, dir(%s), size(%s), quotaID(%d)", dir, size, quotaID)
+	if isRegular, err := CheckRegularFile(dir); err != nil || !isRegular {
+		logrus.Debugf("set quota skip not regular file: %s", dir)
+		return err
+	}
 	return GQuotaDriver.SetDiskQuota(dir, size, quotaID)
 }
 
@@ -143,17 +149,42 @@ func GetQuotaIDInFileAttr(dir string) uint32 {
 
 // SetQuotaIDInFileAttr is used to set file attributes of quota ID.
 func SetQuotaIDInFileAttr(dir string, id uint32) error {
+	if isRegular, err := CheckRegularFile(dir); err != nil || !isRegular {
+		logrus.Debugf("set quota skip not regular file: %s", dir)
+		return err
+	}
+
 	return GQuotaDriver.SetQuotaIDInFileAttr(dir, id)
 }
 
 // SetQuotaIDInFileAttrNoOutput is used to set file attribute of quota ID without error.
 func SetQuotaIDInFileAttrNoOutput(dir string, quotaID uint32) {
+	if isRegular, err := CheckRegularFile(dir); err != nil || !isRegular {
+		logrus.Debugf("set quota skip not regular file: %s", dir)
+		return
+	}
+
 	GQuotaDriver.SetQuotaIDInFileAttrNoOutput(dir, quotaID)
 }
 
 //GetNextQuotaID returns the next available quota id.
 func GetNextQuotaID() (uint32, error) {
 	return GQuotaDriver.GetNextQuotaID()
+}
+
+// GetQuotaID returns the quota id of directory,
+// if no quota id, it will alloc the next available quota id.
+func GetQuotaID(dir string) (uint32, error) {
+	id := GetQuotaIDInFileAttr(dir)
+	if id > 0 {
+		return id, nil
+	}
+	id, err := GetNextQuotaID()
+	if err != nil {
+		return 0, errors.Wrapf(err, "failed to get file(%s) quota id", dir)
+	}
+
+	return id, nil
 }
 
 //GetDefaultQuota returns the default quota size.
@@ -181,22 +212,24 @@ func GetDefaultQuota(quotas map[string]string) string {
 func SetRootfsDiskQuota(basefs, size string, quotaID uint32) (uint32, error) {
 	overlayMountInfo, err := getOverlayMountInfo(basefs)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get overlay mount info: %v", err)
+		return 0, errors.Wrapf(err, "failed to get overlay(%s) mount info", basefs)
 	}
 
 	for _, dir := range []string{overlayMountInfo.Upper, overlayMountInfo.Work} {
 		_, err = StartQuotaDriver(dir)
 		if err != nil {
-			return 0, fmt.Errorf("failed to start quota driver: %v", err)
+			return 0, errors.Wrapf(err, "failed to start dir(%s) quota driver", dir)
 		}
 
-		quotaID, err = SetSubtree(dir, quotaID)
-		if err != nil {
-			return 0, fmt.Errorf("failed to set subtree: %v", err)
+		if quotaID == 0 {
+			quotaID, err = GetQuotaID(dir)
+			if err != nil {
+				return 0, errors.Wrapf(err, "failed to get dir(%s) quota id", dir)
+			}
 		}
 
 		if err := SetDiskQuota(dir, size, quotaID); err != nil {
-			return 0, fmt.Errorf("failed to set disk quota: %v", err)
+			return 0, errors.Wrapf(err, "failed to set dir(%s) disk quota", dir)
 		}
 	}
 
@@ -217,12 +250,28 @@ func SetQuotaForDir(src string, quotaID uint32) error {
 	return nil
 }
 
+// CheckRegularFile is used to check the file is regular file or directory.
+func CheckRegularFile(file string) (bool, error) {
+	fd, err := os.Lstat(file)
+	if err != nil {
+		logrus.Warnf("failed to check file: %s, err: %v", file, err)
+		return false, err
+	}
+
+	mode := fd.Mode()
+	if mode&(os.ModeSymlink|os.ModeNamedPipe|os.ModeSocket|os.ModeDevice) == 0 {
+		return true, nil
+	}
+
+	return false, nil
+}
+
 // getOverlayMountInfo gets overlayFS informantion from /proc/mounts.
 // upperdir, mergeddir and workdir would be dealt.
 func getOverlayMountInfo(basefs string) (*OverlayMount, error) {
 	output, err := ioutil.ReadFile(procMountFile)
 	if err != nil {
-		logrus.Warnf("failed to ReadFile %s: %v", procMountFile, err)
+		logrus.Warnf("failed to read file(%s), err(%v)", procMountFile, err)
 		return nil, err
 	}
 
@@ -293,7 +342,7 @@ func getOverlayMountInfo(basefs string) (*OverlayMount, error) {
 // #500      --   47504       0       0            101     0     0
 // #16777221 -- 3048576       0 3048576              8     0     0
 func loadQuotaIDs(repquotaOpt string) (map[uint32]struct{}, uint32, error) {
-	quotaIDs := make(map[uint32]struct{}, 0)
+	quotaIDs := make(map[uint32]struct{})
 
 	minID := QuotaMinID
 	exit, output, stderr, err := exec.Run(0, "repquota", repquotaOpt)
@@ -323,7 +372,7 @@ func loadQuotaIDs(repquotaOpt string) (map[uint32]struct{}, uint32, error) {
 			}
 		}
 	}
-	logrus.Infof("Load repquota ids: %d, list: %v", len(quotaIDs), quotaIDs)
+	logrus.Infof("Load repquota ids(%d), list(%v)", len(quotaIDs), quotaIDs)
 	return quotaIDs, minID, nil
 }
 
@@ -334,15 +383,15 @@ func getMountpoint(dir string) (string, error) {
 
 	output, err := ioutil.ReadFile(procMountFile)
 	if err != nil {
-		logrus.Warnf("failed to read file: (%s), err: (%v)", procMountFile, err)
-		return "", errors.Wrapf(err, "failed to read file: (%s)", procMountFile)
+		logrus.Warnf("failed to read file(%s), err(%v)", procMountFile, err)
+		return "", errors.Wrapf(err, "failed to read file(%s)", procMountFile)
 	}
 
 	devID, err := system.GetDevID(dir)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to get device id for dir: (%s)", dir)
+		return "", errors.Wrapf(err, "failed to get device id for dir(%s)", dir)
 	}
-	logrus.Debugf("get directory(%s) device id: (%d)", dir, devID)
+	logrus.Debugf("get dir(%s) device id(%d)", dir, devID)
 
 	// /dev/sdb1 /home/pouch ext4 rw,relatime,prjquota,data=ordered 0 0
 	for _, line := range strings.Split(string(output), "\n") {
@@ -372,10 +421,10 @@ func getMountpoint(dir string) (string, error) {
 	}
 
 	if mountPoint == "" {
-		return "", errors.Errorf("failed to get mount point of directory: (%s)", dir)
+		return "", errors.Errorf("failed to get mount point of dir(%s)", dir)
 	}
 
-	logrus.Debugf("get the directory: (%s) mountpoint: (%s)", dir, mountPoint)
+	logrus.Debugf("get the dir(%s)'s mountpoint(%s)", dir, mountPoint)
 
 	return mountPoint, nil
 }
@@ -391,20 +440,20 @@ func setDevLimit(dir string, devID uint64) (uint64, error) {
 
 	mp, err := getMountpoint(dir)
 	if err != nil {
-		return 0, errors.Wrapf(err, "failed to set device limit, dir: (%s), devID: (%d)", dir, devID)
+		return 0, errors.Wrapf(err, "failed to set device limit, dir(%s), devID(%d)", dir, devID)
 	}
 
 	newDevID, _ := system.GetDevID(mp)
 	if newDevID != devID {
-		return 0, errors.Errorf("failed to set device limit, no such device id: (%d), checked id: (%d)",
+		return 0, errors.Errorf("failed to set device limit, no such device id(%d), checked id(%d)",
 			devID, newDevID)
 	}
 
 	// get storage upper limit of the device which the dir is on.
 	var stfs syscall.Statfs_t
 	if err := syscall.Statfs(mp, &stfs); err != nil {
-		logrus.Errorf("failed to get path: (%s) limit, err: (%v)", mp, err)
-		return 0, errors.Wrapf(err, "failed to get path: (%s) limit", mp)
+		logrus.Errorf("failed to get path(%s) limit, err(%v)", mp, err)
+		return 0, errors.Wrapf(err, "failed to get path(%s) limit", mp)
 	}
 	limit = stfs.Blocks * uint64(stfs.Bsize)
 
@@ -412,7 +461,7 @@ func setDevLimit(dir string, devID uint64) (uint64, error) {
 	devLimits[devID] = limit
 	lock.Unlock()
 
-	logrus.Debugf("SetDevLimit: dir: (%s), mountpoint: (%s), limit: (%v) B", dir, mp, limit)
+	logrus.Debugf("SetDevLimit: dir(%s), mountpoint(%s), limit(%v) B", dir, mp, limit)
 	return limit, nil
 }
 
@@ -420,7 +469,7 @@ func setDevLimit(dir string, devID uint64) (uint64, error) {
 func checkDevLimit(dir string, size uint64) error {
 	devID, err := system.GetDevID(dir)
 	if err != nil {
-		return errors.Wrapf(err, "failed to get device id, dir: (%s)", dir)
+		return errors.Wrapf(err, "failed to get device id, dir(%s)", dir)
 	}
 
 	lock.Lock()
@@ -429,7 +478,7 @@ func checkDevLimit(dir string, size uint64) error {
 	if !exist {
 		// if has not recorded, just add (dir, device, limit) to driver.
 		if limit, err = setDevLimit(dir, devID); err != nil {
-			return errors.Wrapf(err, "failed to set device limit, dir: (%s), devID: (%d)", dir, devID)
+			return errors.Wrapf(err, "failed to set device limit, dir(%s), devID: (%d)", dir, devID)
 		}
 	}
 

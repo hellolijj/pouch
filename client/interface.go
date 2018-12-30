@@ -45,11 +45,12 @@ type ContainerAPIClient interface {
 	ContainerCheckpointList(ctx context.Context, name string, options types.CheckpointListOptions) ([]string, error)
 	ContainerCheckpointDelete(ctx context.Context, name string, options types.CheckpointDeleteOptions) error
 	ContainerCommit(ctx context.Context, name string, options types.ContainerCommitOptions) (*types.ContainerCommitResp, error)
+	ContainerStats(ctx context.Context, name string, stream bool) (io.ReadCloser, error)
 }
 
 // ImageAPIClient defines methods of Image client.
 type ImageAPIClient interface {
-	ImageList(ctx context.Context) ([]types.ImageInfo, error)
+	ImageList(ctx context.Context, filters filters.Args) ([]types.ImageInfo, error)
 	ImageInspect(ctx context.Context, name string) (types.ImageInfo, error)
 	ImagePull(ctx context.Context, name, tag, encodedAuth string) (io.ReadCloser, error)
 	ImageRemove(ctx context.Context, name string, force bool) error
@@ -64,7 +65,7 @@ type VolumeAPIClient interface {
 	VolumeCreate(ctx context.Context, config *types.VolumeCreateConfig) (*types.VolumeInfo, error)
 	VolumeRemove(ctx context.Context, name string) error
 	VolumeInspect(ctx context.Context, name string) (*types.VolumeInfo, error)
-	VolumeList(ctx context.Context) (*types.VolumeListResp, error)
+	VolumeList(ctx context.Context, filter filters.Args) (*types.VolumeListResp, error)
 }
 
 // SystemAPIClient defines methods of System client.

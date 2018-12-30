@@ -4,13 +4,22 @@ import (
 	"context"
 	"strings"
 
+	"github.com/alibaba/pouch/apis/filters"
 	"github.com/alibaba/pouch/daemon/events"
 	"github.com/alibaba/pouch/pkg/errtypes"
+	"github.com/alibaba/pouch/pkg/utils"
 	"github.com/alibaba/pouch/storage/volume"
 	"github.com/alibaba/pouch/storage/volume/types"
 
 	"github.com/pkg/errors"
 )
+
+// the filter tags set allowed when pouch volume ls -f
+var acceptedVolumeFilterTags = map[string]bool{
+	"driver": true,
+	"name":   true,
+	"label":  true,
+}
 
 // VolumeMgr defines interface to manage container volume.
 type VolumeMgr interface {
@@ -21,7 +30,7 @@ type VolumeMgr interface {
 	Get(ctx context.Context, name string) (*types.Volume, error)
 
 	// List returns all volumes on this host.
-	List(ctx context.Context, labels map[string]string) ([]*types.Volume, error)
+	List(ctx context.Context, filter filters.Args) ([]*types.Volume, error)
 
 	// Remove is used to delete an existing volume.
 	Remove(ctx context.Context, name string) error
@@ -65,12 +74,11 @@ func (vm *VolumeManager) Create(ctx context.Context, name, driver string, option
 		driver = types.DefaultBackend
 	}
 
-	id := types.VolumeID{
-		Name:      name,
-		Driver:    driver,
-		Options:   map[string]string{},
-		Selectors: map[string]string{},
-		Labels:    map[string]string{},
+	id := types.VolumeContext{
+		Name:    name,
+		Driver:  driver,
+		Options: map[string]string{},
+		Labels:  map[string]string{},
 	}
 
 	if labels != nil {
@@ -83,6 +91,9 @@ func (vm *VolumeManager) Create(ctx context.Context, name, driver string, option
 
 	v, err := vm.core.CreateVolume(id)
 	if err != nil {
+		if errtypes.IsVolumeExisted(err) {
+			return v, nil
+		}
 		return nil, err
 	}
 
@@ -93,7 +104,7 @@ func (vm *VolumeManager) Create(ctx context.Context, name, driver string, option
 
 // Get returns the information of volume that specified name/id.
 func (vm *VolumeManager) Get(ctx context.Context, name string) (*types.Volume, error) {
-	id := types.VolumeID{
+	id := types.VolumeContext{
 		Name: name,
 	}
 	vol, err := vm.core.GetVolume(id)
@@ -107,8 +118,11 @@ func (vm *VolumeManager) Get(ctx context.Context, name string) (*types.Volume, e
 }
 
 // List returns all volumes on this host.
-func (vm *VolumeManager) List(ctx context.Context, labels map[string]string) ([]*types.Volume, error) {
-	return vm.core.ListVolumes(labels)
+func (vm *VolumeManager) List(ctx context.Context, filter filters.Args) ([]*types.Volume, error) {
+	if err := filter.Validate(acceptedVolumeFilterTags); err != nil {
+		return nil, err
+	}
+	return vm.core.ListVolumes(filter)
 }
 
 // Remove is used to delete an existing volume.
@@ -123,7 +137,7 @@ func (vm *VolumeManager) Remove(ctx context.Context, name string) error {
 		return errors.Wrapf(errtypes.ErrVolumeInUse, "failed to remove volume(%s)", name)
 	}
 
-	id := types.VolumeID{
+	id := types.VolumeContext{
 		Name: name,
 	}
 	if err := vm.core.RemoveVolume(id); err != nil {
@@ -140,7 +154,7 @@ func (vm *VolumeManager) Remove(ctx context.Context, name string) error {
 
 // Path returns the mount path of volume.
 func (vm *VolumeManager) Path(ctx context.Context, name string) (string, error) {
-	id := types.VolumeID{
+	id := types.VolumeContext{
 		Name: name,
 	}
 	return vm.core.VolumePath(id)
@@ -148,7 +162,7 @@ func (vm *VolumeManager) Path(ctx context.Context, name string) (string, error) 
 
 // Attach is used to bind a volume to container.
 func (vm *VolumeManager) Attach(ctx context.Context, name string, options map[string]string) (*types.Volume, error) {
-	id := types.VolumeID{
+	id := types.VolumeContext{
 		Name: name,
 	}
 
@@ -176,7 +190,7 @@ func (vm *VolumeManager) Attach(ctx context.Context, name string, options map[st
 
 // Detach is used to unbind a volume from container.
 func (vm *VolumeManager) Detach(ctx context.Context, name string, options map[string]string) (*types.Volume, error) {
-	id := types.VolumeID{
+	id := types.VolumeContext{
 		Name: name,
 	}
 
@@ -198,12 +212,7 @@ func (vm *VolumeManager) Detach(ctx context.Context, name string, options map[st
 
 		if ref != "" {
 			ids := strings.Split(ref, ",")
-			for i, id := range ids {
-				if id == cid {
-					ids = append(ids[:i], ids[i+1:]...)
-				}
-			}
-
+			ids = utils.StringSliceDelete(ids, cid)
 			if len(ids) > 0 {
 				options[types.OptionRef] = strings.Join(ids, ",")
 			} else {

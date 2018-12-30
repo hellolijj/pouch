@@ -22,29 +22,28 @@ var (
 )
 
 func init() {
-	GetRootDir(&DefaultRootDir)
+	DefaultRootDir, _ = GetRootDir()
 	// DefaultVolumeMountPath defines the default volume mount path.
 	DefaultVolumeMountPath = DefaultRootDir + "/volume"
 }
 
 // GetRootDir assign the root dir
-func GetRootDir(rootdir *string) error {
+func GetRootDir() (string, error) {
 	resp, err := request.Get("/info")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	got := types.SystemInfo{}
 	err = json.NewDecoder(resp.Body).Decode(&got)
 	if err != nil {
-		return err
+		return "", err
 	}
-	*rootdir = got.PouchRootDir
-	return nil
+	return got.PouchRootDir, nil
 }
 
-// StartDefaultDaemonDebug starts a deamon with default configuration and debug on.
+// StartDefaultDaemonDebug starts a daemon with default configuration and debug on.
 func StartDefaultDaemonDebug(args ...string) (*daemon.Config, error) {
 	cfg := daemon.NewConfig()
 	cfg.Debug = true
@@ -54,7 +53,7 @@ func StartDefaultDaemonDebug(args ...string) (*daemon.Config, error) {
 	return &cfg, cfg.StartDaemon()
 }
 
-// StartDefaultDaemon starts a deamon with all default configuration and debug off.
+// StartDefaultDaemon starts a daemon with all default configuration and debug off.
 func StartDefaultDaemon(args ...string) (*daemon.Config, error) {
 	cfg := daemon.NewConfig()
 	cfg.Debug = false
@@ -62,13 +61,6 @@ func StartDefaultDaemon(args ...string) (*daemon.Config, error) {
 	cfg.NewArgs(args...)
 
 	return &cfg, cfg.StartDaemon()
-}
-
-// StartDaemonBareWithArgs starts a deamon with all user specified parameter.
-func StartDaemonBareWithArgs(cfg *daemon.Config, args ...string) error {
-	cfg.NewArgs(args...)
-
-	return cfg.StartDaemon()
 }
 
 // RestartDaemon restart daemon

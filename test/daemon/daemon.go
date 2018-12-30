@@ -15,14 +15,13 @@ import (
 	"github.com/gotestyourself/gotestyourself/icmd"
 )
 
-// For pouch deamon test, we launched another pouch daemon.
+// For pouch daemon test, we launched another pouch daemon.
 const (
 	DaemonLog     = "/tmp/pouchd.log"
 	PouchdBin     = "pouchd"
 	HomeDir       = "/tmp/test/pouch"
 	Listen        = "unix:///tmp/test/pouch/pouchd.sock"
 	ContainerdAdd = "/tmp/test/pouch/containerd.sock"
-	ListenCRI     = "unix:///tmp/test/pouch/pouchcri.sock"
 	Pidfile       = "/tmp/test/pouch/pouch.pid"
 )
 
@@ -42,7 +41,6 @@ type Config struct {
 	Listen         string
 	HomeDir        string
 	ContainerdAddr string
-	ListenCri      string
 	Pidfile        string
 
 	// pid of pouchd
@@ -51,7 +49,7 @@ type Config struct {
 	// timeout for starting daemon
 	timeout int64
 
-	// if Debug=true, dump daemon log when deamon failed to start
+	// if Debug=true, dump daemon log when daemon failed to start
 	Debug bool
 }
 
@@ -67,7 +65,6 @@ func NewConfig() Config {
 	result.Listen = Listen
 	result.HomeDir = HomeDir
 	result.ContainerdAddr = ContainerdAdd
-	result.ListenCri = ListenCRI
 	result.Pidfile = Pidfile
 
 	result.timeout = 15
@@ -88,9 +85,6 @@ func (d *Config) NewArgs(args ...string) {
 	}
 	if len(d.ContainerdAddr) != 0 {
 		d.Args = append(d.Args, "--containerd="+d.ContainerdAddr)
-	}
-	if len(d.ListenCri) != 0 {
-		d.Args = append(d.Args, "--listen-cri="+d.ListenCri)
 	}
 	if len(d.Pidfile) != 0 {
 		d.Args = append(d.Args, "--pidfile="+d.Pidfile)
@@ -168,8 +162,8 @@ func (d *Config) StartDaemon() error {
 		close(wait)
 	}()
 
-	if util.WaitTimeout(time.Duration(d.timeout)*time.Second, d.IsDaemonUp) == false {
-		if d.Debug == true {
+	if !util.WaitTimeout(time.Duration(d.timeout)*time.Second, d.IsDaemonUp) {
+		if d.Debug {
 			d.DumpLog()
 
 			fmt.Printf("\nFailed to launch pouchd:%v\n", d.Args)
@@ -201,7 +195,7 @@ func (d *Config) DumpLog() {
 
 // KillDaemon kill pouchd.
 func (d *Config) KillDaemon() {
-	if d.IsDaemonUp() == false {
+	if !d.IsDaemonUp() {
 		return
 	}
 
@@ -215,5 +209,4 @@ func (d *Config) KillDaemon() {
 
 		d.LogFile.Close()
 	}
-	return
 }

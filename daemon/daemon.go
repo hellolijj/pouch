@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
-	"plugin"
 	"reflect"
 
 	"github.com/alibaba/pouch/apis/server"
@@ -24,8 +23,6 @@ import (
 
 	systemddaemon "github.com/coreos/go-systemd/daemon"
 	systemdutil "github.com/coreos/go-systemd/util"
-	"github.com/gorilla/mux"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -49,13 +46,8 @@ type Daemon struct {
 	daemonPlugin    hookplugins.DaemonPlugin
 	volumePlugin    hookplugins.VolumePlugin
 	criPlugin       hookplugins.CriPlugin
+	apiPlugin       hookplugins.APIPlugin
 	eventsService   *events.Events
-}
-
-// router represents the router of daemon.
-type router struct {
-	daemon *Daemon
-	*mux.Router
 }
 
 // NewDaemon constructs a brand new server.
@@ -109,20 +101,23 @@ func NewDaemon(cfg *config.Config) *Daemon {
 		return nil
 	}
 
+	if cfg.Snapshotter != "" {
+		ctrd.SetSnapshotterName(cfg.Snapshotter)
+	}
+
+	if err = checkSnapshotterValid(ctrd.CurrentSnapshotterName(), ctrdClient); err != nil {
+		logrus.Errorf("failed to check snapshotter driver: %v", err)
+		return nil
+	}
+
+	logrus.Infof("Snapshotter is set to be %s", ctrd.CurrentSnapshotterName())
+
 	return &Daemon{
 		config:         cfg,
 		ctrdClient:     ctrdClient,
 		ctrdDaemon:     ctrdDaemon,
 		containerStore: containerStore,
 	}
-}
-
-func loadSymbolByName(p *plugin.Plugin, name string) (plugin.Symbol, error) {
-	s, err := p.Lookup(name)
-	if err != nil {
-		return nil, errors.Wrapf(err, "lookup plugin with name %s error", name)
-	}
-	return s, nil
 }
 
 func (d *Daemon) loadPlugin() error {
@@ -146,6 +141,11 @@ func (d *Daemon) loadPlugin() error {
 	// load cri plugin if exist
 	if criPlugin := hookplugins.GetCriPlugin(); criPlugin != nil {
 		d.criPlugin = criPlugin
+	}
+
+	// load api plugin if exist
+	if apiPlugin := hookplugins.GetAPIPlugin(); apiPlugin != nil {
+		d.apiPlugin = apiPlugin
 	}
 
 	if d.daemonPlugin != nil {
@@ -198,7 +198,9 @@ func (d *Daemon) Run() error {
 	}
 	d.containerMgr = containerMgr
 
-	if err := containerMgr.Restore(ctx); err != nil {
+	// just register containers information here to let
+	// networkMgr to use.
+	if err := containerMgr.Load(ctx); err != nil {
 		return err
 	}
 
@@ -208,6 +210,12 @@ func (d *Daemon) Run() error {
 	}
 	d.networkMgr = networkMgr
 	containerMgr.(*mgr.ContainerManager).NetworkMgr = networkMgr
+
+	// after initialize network manager, try to recover all
+	// running containers
+	if err := containerMgr.Restore(ctx); err != nil {
+		return err
+	}
 
 	if err := d.addSystemLabels(); err != nil {
 		return err
@@ -239,6 +247,7 @@ func (d *Daemon) Run() error {
 		NetworkMgr:      networkMgr,
 		StreamRouter:    streamRouter,
 		ContainerPlugin: d.containerPlugin,
+		APIPlugin:       d.apiPlugin,
 	}
 
 	httpReadyCh := make(chan bool)

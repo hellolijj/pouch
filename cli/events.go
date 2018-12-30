@@ -18,7 +18,7 @@ import (
 )
 
 // eventsDescription is used to describe events command in detail and auto generate command doc.
-var eventsDescription = "events cli tool is used to subscribe pouchd events." +
+var eventsDescription = "events cli tool is used to subscribe pouchd events. " +
 	"We support filter parameter to filter some events that we care about or not."
 
 // EventsCommand use to implement 'events' command.
@@ -59,15 +59,9 @@ func (e *EventsCommand) runEvents() error {
 	ctx := context.Background()
 	apiClient := e.cli.Client()
 
-	eventFilterArgs := filters.NewArgs()
-
-	// TODO: parse params
-	for _, f := range e.filter {
-		var err error
-		eventFilterArgs, err = filters.ParseFlag(f, eventFilterArgs)
-		if err != nil {
-			return err
-		}
+	eventFilterArgs, err := filters.FromFilterOpts(e.filter)
+	if err != nil {
+		return err
 	}
 
 	responseBody, err := apiClient.Events(ctx, e.since, e.until, eventFilterArgs)

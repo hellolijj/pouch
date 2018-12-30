@@ -1,10 +1,9 @@
 package main
 
 import (
-	"strings"
-
 	"github.com/alibaba/pouch/test/command"
 	"github.com/alibaba/pouch/test/environment"
+	"github.com/alibaba/pouch/test/util"
 
 	"github.com/go-check/check"
 	"github.com/gotestyourself/gotestyourself/icmd"
@@ -39,14 +38,8 @@ func (suite *PouchRunPrivilegedSuite) TestRunWithAndWithoutPrivileged(c *check.C
 	name1 := "TestRunWithoutPrivileged"
 	res := command.PouchRun("run", "--name", name1, busyboxImage, "brctl", "addbr", "foobar")
 	defer DelContainerForceMultyTime(c, name1)
-	if res.ExitCode == 0 {
-		c.Errorf("non-privileged container executes brctl should failed, but succeeded: %v", res.Combined())
-	}
 
-	expected := "Operation not permitted"
-	if out := res.Combined(); !strings.Contains(out, expected) {
-		c.Errorf("expected %s, but got %s", expected, out)
-	}
+	c.Assert(util.PartialEqual(res.Combined(), "Operation not permitted"), check.IsNil)
 }
 
 func (suite *PouchRunPrivilegedSuite) TestRunCheckProcWritableWithAndWithoutPrivileged(c *check.C) {
@@ -58,14 +51,7 @@ func (suite *PouchRunPrivilegedSuite) TestRunCheckProcWritableWithAndWithoutPriv
 	res := command.PouchRun("run", "--name", name1, busyboxImage, "sh", "-c", "touch /proc/sysrq-trigger")
 	defer DelContainerForceMultyTime(c, name1)
 
-	if res.ExitCode == 0 {
-		c.Errorf("non-privileged container executes touch /proc/sysrq-trigger should failed, but succeeded: %v", res.Combined())
-	}
-
-	expected := "Read-only file system"
-	if out := res.Combined(); !strings.Contains(out, expected) {
-		c.Errorf("expected %s, but got %s", expected, out)
-	}
+	c.Assert(util.PartialEqual(res.Combined(), "Read-only file system"), check.IsNil)
 }
 
 func (suite *PouchRunPrivilegedSuite) TestRunCheckSysWritableWithAndWithoutPrivileged(c *check.C) {
@@ -77,12 +63,19 @@ func (suite *PouchRunPrivilegedSuite) TestRunCheckSysWritableWithAndWithoutPrivi
 	res := command.PouchRun("run", "--name", name1, busyboxImage, "sh", "-c", "touch /sys/kernel/profiling")
 	defer DelContainerForceMultyTime(c, name1)
 
-	if res.ExitCode == 0 {
-		c.Errorf("non-privileged container executes touch /sys/kernel/profiling should failed, but succeeded: %v", res.Combined())
-	}
+	c.Assert(util.PartialEqual(res.Combined(), "Read-only file system"), check.IsNil)
+}
 
-	expected := "Read-only file system"
-	if out := res.Combined(); !strings.Contains(out, expected) {
-		c.Errorf("expected %s, but got %s", expected, out)
-	}
+// TestCgroupWritableWithAndWithoutPrivileged tests cgroup can be writable with privileged,
+// can not be writable without privileged
+func (suite *PouchRunPrivilegedSuite) TestCgroupWritableWithAndWithoutPrivileged(c *check.C) {
+	name := "TestRunCheckCgroupWritable"
+	command.PouchRun("run", "--name", name, "--privileged", busyboxImage, "sh", "-c", "mkdir /sys/fs/cgroup/cpu/test").Assert(c, icmd.Success)
+	defer DelContainerForceMultyTime(c, name)
+
+	name1 := "TestRunCheckCgroupCannotWritable"
+	res := command.PouchRun("run", "--name", name1, busyboxImage, "sh", "-c", "mkdir /sys/fs/cgroup/cpu/test")
+	defer DelContainerForceMultyTime(c, name1)
+
+	c.Assert(util.PartialEqual(res.Combined(), "Read-only file system"), check.IsNil)
 }

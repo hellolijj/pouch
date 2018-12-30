@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"runtime"
 	"strings"
 
 	"github.com/alibaba/pouch/apis/types"
@@ -14,7 +13,7 @@ import (
 
 	"github.com/go-check/check"
 	"github.com/gotestyourself/gotestyourself/icmd"
-	digest "github.com/opencontainers/go-digest"
+	"github.com/opencontainers/go-digest"
 )
 
 // PouchCreateSuite is the test suite for create CLI.
@@ -49,7 +48,7 @@ func (suite *PouchCreateSuite) TestCreateName(c *check.C) {
 	c.Assert(res.Combined(), check.Equals, fmt.Sprintf("%s\n", digStr))
 }
 
-// TestCreateNameByImageID is to verify the correctness of creating contaier with specified name by image id.
+// TestCreateNameByImageID is to verify the correctness of creating container with specified name by image id.
 func (suite *PouchCreateSuite) TestCreateNameByImageID(c *check.C) {
 	name := "create-normal-by-image-id"
 
@@ -109,12 +108,7 @@ func (suite *PouchCreateSuite) TestCreateWithTTY(c *check.C) {
 //
 // TODO: pouch inspect should return volume info to check
 func (suite *PouchCreateSuite) TestPouchCreateVolume(c *check.C) {
-	pc, _, _, _ := runtime.Caller(0)
-	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
-	var funcname string
-	for i := range tmpname {
-		funcname = tmpname[i]
-	}
+	funcname := "TestPouchCreateVolume"
 
 	res := command.PouchRun("create", "-v /tmp:/tmp", "--name", funcname, busyboxImage)
 	defer DelContainerForceMultyTime(c, funcname)
@@ -355,7 +349,7 @@ func (suite *PouchCreateSuite) TestCreateWithUser(c *check.C) {
 	c.Assert(userConfig, check.Equals, user)
 }
 
-// TestCreateWithIntelRdt tests creating container with Intel Rdt.
+// TestCreateWithIntelRdt tests creating container with Intel RDT.
 func (suite *PouchCreateSuite) TestCreateWithIntelRdt(c *check.C) {
 	name := "TestCreateWithIntelRdt"
 	intelRdt := "L3:<cache_id0>=<cbm0>"
@@ -393,7 +387,7 @@ func (suite *PouchCreateSuite) TestCreateWithAliOSMemoryOptions(c *check.C) {
 	c.Assert(result[0].HostConfig.ScheLatSwitch, check.Equals, int64(1))
 }
 
-// TestCreateWithOOMOption tests creating container with oom options.
+// TestCreateWithOOMOption tests creating container with OOM options.
 func (suite *PouchCreateSuite) TestCreateWithOOMOption(c *check.C) {
 	name := "TestCreateWithOOMOption"
 	oomScore := "100"
@@ -471,17 +465,17 @@ func (suite *PouchCreateSuite) TestCreateWithPidsLimit(c *check.C) {
 func (suite *PouchCreateSuite) TestCreateWithNonExistImage(c *check.C) {
 	cname := "TestCreateWithNonExistImage"
 	// we should use a non-used image, since containerd not remove image immediately.
-	image := "docker.io/library/alpine"
-	res := command.PouchRun("create", "--name", cname, image)
-	res.Assert(c, icmd.Success)
+	DelImageForceOk(c, busyboxImage)
+	command.PouchRun("create", "--name", cname, busyboxImage).Assert(c, icmd.Success)
 }
 
 // TestCreateWithNonExistImage tests running container with image not exist.
 func (suite *PouchCreateSuite) TestCreateWithNvidiaConfig(c *check.C) {
 	cname := "TestCreateWithNvidiaConfig"
-	image := "docker.io/library/alpine"
-	res := command.PouchRun("create", "--name", cname, "--nvidia-capabilities", "all", "--nvidia-visible-devs", "none", image)
-	res.Assert(c, icmd.Success)
+	command.PouchRun("create", "--name", cname,
+		"--nvidia-capabilities", "all",
+		"--nvidia-visible-devs", "none", busyboxImage).Assert(c, icmd.Success)
+	defer command.PouchRun("rm", "-vf", cname)
 
 	output := command.PouchRun("inspect", cname).Stdout()
 	result := []types.ContainerJSON{}
@@ -497,9 +491,9 @@ func (suite *PouchCreateSuite) TestCreateWithNvidiaConfig(c *check.C) {
 // TestCreateWithNonExistImage tests running container with image not exist.
 func (suite *PouchCreateSuite) TestCreateWithoutNvidiaConfig(c *check.C) {
 	cname := "TestCreateWithoutNvidiaConfig"
-	image := "docker.io/library/alpine"
-	res := command.PouchRun("create", "--name", cname, image)
-	res.Assert(c, icmd.Success)
+
+	command.PouchRun("create", "--name", cname, busyboxImage).Assert(c, icmd.Success)
+	defer command.PouchRun("rm", "-vf", cname)
 
 	output := command.PouchRun("inspect", cname).Stdout()
 	result := []types.ContainerJSON{}
