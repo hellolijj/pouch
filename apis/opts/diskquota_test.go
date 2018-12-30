@@ -15,11 +15,14 @@ func TestParseDiskQuota(t *testing.T) {
 		want    map[string]string
 		wantErr bool
 	}{
-		// TODO: Add test cases.
 		{name: "test1", args: args{diskquota: []string{""}}, want: nil, wantErr: true},
 		{name: "test2", args: args{diskquota: []string{"foo=foo=foo"}}, want: nil, wantErr: true},
 		{name: "test3", args: args{diskquota: []string{"foo"}}, want: map[string]string{"/": "foo"}, wantErr: false},
-		{name: "test3", args: args{diskquota: []string{"foo=foo"}}, want: map[string]string{"foo": "foo"}, wantErr: false},
+		{name: "test4", args: args{diskquota: []string{"foo=foo"}}, want: map[string]string{"foo": "foo"}, wantErr: false},
+		{name: "test5", args: args{diskquota: []string{"foo = foo"}}, want: map[string]string{"foo": "foo"}, wantErr: true},
+		{name: "test6", args: args{diskquota: []string{"  "}}, want: nil, wantErr: true},
+		{name: "test7", args: args{diskquota: nil}, want: nil, wantErr: true},
+		{name: "test8", args: args{diskquota: []string{"foo=foo", "bar=bar"}}, want: map[string]string{"foo": "foo", "bar": "bar"}, wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
