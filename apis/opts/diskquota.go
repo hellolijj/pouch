@@ -9,10 +9,6 @@ import (
 func ParseDiskQuota(quotas []string) (map[string]string, error) {
 	var quotaMaps = make(map[string]string)
 
-	if len(quotas) == 0 {
-		return nil, fmt.Errorf("invalid format for disk quota: quotas cannot be empty")
-	}
-
 	for _, quota := range quotas {
 		if quota == "" {
 			return nil, fmt.Errorf("invalid format for disk quota: quota cannot be empty string")
