@@ -2,10 +2,13 @@ package mgr
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -326,7 +329,40 @@ func (mgr *ImageManager) ListImages(ctx context.Context, filter filters.Args) ([
 // SearchImages searches imaged from specified registry.
 func (mgr *ImageManager) SearchImages(ctx context.Context, name string, registry string) ([]types.SearchResultItem, error) {
 	// Directly send API calls towards specified registry
-	return nil, errtypes.ErrNotImplemented
+	if len(registry) == 0 {
+		registry = "https://index.docker.io/v1/"
+	}
+
+	u := registry + "search?q=" + url.QueryEscape(name)
+	res, err := http.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		return nil, errtypes.ErrTimeout
+	}
+
+	rawData, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// todo: to move where it should be
+	type SearchResults struct {
+		Query      string                   `json:"query"`
+		NumResults int                      `json:"num_results"`
+		Results    []types.SearchResultItem `json:"results"`
+	}
+
+	searchResults := new(SearchResults)
+	err = json.Unmarshal(rawData, searchResults)
+
+	return searchResults.Results, err
+
+	// todo: whether this code rebuild in ctrd ?
+	// todo: to add some session code and log info?
+	//return mgr.client.SearchImage(ctx, name, registry)
 }
 
 // RemoveImage deletes a reference.
