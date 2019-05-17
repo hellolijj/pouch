@@ -1,13 +1,13 @@
 package main
 
 import (
-	"github.com/alibaba/pouch/test/environment"
-
 	"net/url"
 
 	"github.com/alibaba/pouch/apis/types"
+	"github.com/alibaba/pouch/test/environment"
 	"github.com/alibaba/pouch/test/request"
 	"github.com/alibaba/pouch/test/util"
+
 	"github.com/go-check/check"
 )
 

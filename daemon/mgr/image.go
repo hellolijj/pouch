@@ -23,6 +23,7 @@ import (
 	"github.com/alibaba/pouch/pkg/reference"
 	"github.com/alibaba/pouch/pkg/utils"
 
+	registry2 "github.com/alibaba/pouch/registry"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/content"
 	ctrdmetaimages "github.com/containerd/containerd/images"
@@ -61,7 +62,7 @@ type ImageMgr interface {
 	ListImages(ctx context.Context, filter filters.Args) ([]types.ImageInfo, error)
 
 	// Search Images from specified registry.
-	SearchImages(ctx context.Context, name string, registry string) ([]types.SearchResultItem, error)
+	SearchImages(ctx context.Context, name, registry string, authConfig *types.AuthConfig) ([]types.SearchResultItem, error)
 
 	// RemoveImage deletes an image by reference.
 	RemoveImage(ctx context.Context, idOrRef string, force bool) error
@@ -327,20 +328,30 @@ func (mgr *ImageManager) ListImages(ctx context.Context, filter filters.Args) ([
 }
 
 // SearchImages searches imaged from specified registry.
-func (mgr *ImageManager) SearchImages(ctx context.Context, name string, registry string) ([]types.SearchResultItem, error) {
+func (mgr *ImageManager) SearchImages(ctx context.Context, name, registry string, auth *types.AuthConfig) ([]types.SearchResultItem, error) {
 	// Directly send API calls towards specified registry
 	if len(registry) == 0 {
-		registry = "https://index.docker.io/v1/"
+		registry = registry2.DefaultRegistry
 	}
 
 	u := registry + "search?q=" + url.QueryEscape(name)
-	res, err := http.Get(u)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if auth != nil && auth.IdentityToken != "" && auth.Username != "" {
+		req.SetBasicAuth(auth.Username, auth.Password)
+	}
+
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
+
 	if res.StatusCode != 200 {
-		return nil, errtypes.ErrTimeout
+		return nil, fmt.Errorf("Unexepected status code %d", res.StatusCode)
 	}
 
 	rawData, err := ioutil.ReadAll(res.Body)
@@ -348,7 +359,6 @@ func (mgr *ImageManager) SearchImages(ctx context.Context, name string, registry
 		return nil, err
 	}
 
-	// todo: to move where it should be
 	type SearchResults struct {
 		Query      string                   `json:"query"`
 		NumResults int                      `json:"num_results"`
@@ -360,9 +370,6 @@ func (mgr *ImageManager) SearchImages(ctx context.Context, name string, registry
 
 	return searchResults.Results, err
 
-	// todo: whether this code rebuild in ctrd ?
-	// todo: to add some session code and log info?
-	//return mgr.client.SearchImage(ctx, name, registry)
 }
 
 // RemoveImage deletes a reference.

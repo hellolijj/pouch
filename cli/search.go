@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/alibaba/pouch/registry"
+
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +17,7 @@ type SearchCommand struct {
 	registry string
 }
 
-// Init initialize start command.
+// Init initialize search command.
 func (s *SearchCommand) Init(c *Cli) {
 	s.cli = c
 
@@ -44,7 +46,11 @@ func (s *SearchCommand) runSearch(args []string) error {
 	apiClient := s.cli.Client()
 
 	term := args[0]
-	searchResults, err := apiClient.ImageSearch(ctx, term, s.registry)
+	if len(s.registry) == 0 {
+		s.registry = registry.DefaultRegistry
+	}
+
+	searchResults, err := apiClient.ImageSearch(ctx, term, s.registry, fetchRegistryAuth(s.registry))
 
 	if err != nil {
 		return err
@@ -61,7 +67,6 @@ func (s *SearchCommand) runSearch(args []string) error {
 	return nil
 }
 
-// chang bool value to ok or ""  bool => "[OK]" false => ""
 func boolToOKOrNot(isTrue bool) string {
 	if isTrue {
 		return "[OK]"

@@ -93,7 +93,17 @@ func (s *Server) searchImages(ctx context.Context, rw http.ResponseWriter, req *
 	searchPattern := req.FormValue("term")
 	registry := req.FormValue("registry")
 
-	searchResultItem, err := s.ImageMgr.SearchImages(ctx, searchPattern, registry)
+	// get registry auth from Request header
+	authStr := req.Header.Get("X-Registry-Auth")
+	authConfig := types.AuthConfig{}
+	if authStr != "" {
+		data := base64.NewDecoder(base64.URLEncoding, strings.NewReader(authStr))
+		if err := json.NewDecoder(data).Decode(&authConfig); err != nil {
+			return err
+		}
+	}
+
+	searchResultItem, err := s.ImageMgr.SearchImages(ctx, searchPattern, registry, &authConfig)
 	if err != nil {
 		logrus.Errorf("failed to search images from registry: %v", err)
 		return err

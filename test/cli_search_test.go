@@ -25,5 +25,5 @@ func (suite *PouchSearchSuite) TestSearchWorks(c *check.C) {
 
 // TestSearchInSpecificRegistry test search in specific registry
 func (suite *PouchSearchSuite) TestSearchInSpecificRegistry(c *check.C) {
-	// TODO: Verification specific registry?
+	// TODO: Verification specific registry
 }
