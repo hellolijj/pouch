@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/alibaba/pouch/apis/types"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,8 +19,8 @@ func TestImageSearchServerError(t *testing.T) {
 	client := &APIClient{
 		HTTPCli: newMockClient(errorMockResponse(http.StatusInternalServerError, "Server error")),
 	}
-	term, registry := "", "nginx"
-	_, err := client.ImageSearch(context.Background(), term, registry)
+	term, registry, auth := "", "nginx", ""
+	_, err := client.ImageSearch(context.Background(), term, registry, auth)
 	if err == nil || !strings.Contains(err.Error(), "Server error") {
 		t.Fatalf("expected a Server Error, got %v", err)
 	}
@@ -59,11 +60,22 @@ func TestImageSearchOK(t *testing.T) {
 		HTTPCli: httpClient,
 	}
 
-	searchResults, err := client.ImageSearch(context.Background(), "nginx", "")
+	searchResults, err := client.ImageSearch(context.Background(), "nginx", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	assert.Equal(t, searchResults[0].StarCount, int64(1233))
 	assert.Equal(t, searchResults[0].Name, "nginx")
+}
+
+func TestImageSearchStatusUnauthorizedError(t *testing.T) {
+	client := &APIClient{
+		HTTPCli: newMockClient(errorMockResponse(http.StatusUnauthorized, "Unauthorized Error")),
+	}
+	term, registry, auth := "", "nginx", "some-auth-code"
+	_, err := client.ImageSearch(context.Background(), term, registry, auth)
+	if err == nil || !strings.Contains(err.Error(), "Unauthorized Error") {
+		t.Fatalf("expected a Unauthorized Error, got %v", err)
+	}
 }
