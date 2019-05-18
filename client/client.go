@@ -49,6 +49,7 @@ func NewAPIClient(host string, tls TLSConfig) (CommonAPIClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse host %s: %v", host, err)
 	}
+	fmt.Println(newURL)
 
 	tlsConfig := generateTLSConfig(host, tls)
 
