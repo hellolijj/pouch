@@ -330,7 +330,7 @@ func (mgr *ImageManager) ListImages(ctx context.Context, filter filters.Args) ([
 func (mgr *ImageManager) SearchImages(ctx context.Context, name, registry string, auth *types.AuthConfig) ([]types.SearchResultItem, error) {
 	// Directly send API calls towards specified registry
 	if len(registry) == 0 {
-		registry = mgr.DefaultRegistry
+		registry = "https://" + mgr.DefaultRegistry + "/v1/"
 	}
 
 	u := registry + "search?q=" + url.QueryEscape(name)
