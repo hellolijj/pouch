@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alibaba/pouch/registry"
-
 	"github.com/spf13/cobra"
 )
 
@@ -46,9 +44,6 @@ func (s *SearchCommand) runSearch(args []string) error {
 	apiClient := s.cli.Client()
 
 	term := args[0]
-	if len(s.registry) == 0 {
-		s.registry = registry.DefaultRegistry
-	}
 
 	searchResults, err := apiClient.ImageSearch(ctx, term, s.registry, fetchRegistryAuth(s.registry))
 
