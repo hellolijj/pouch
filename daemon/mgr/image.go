@@ -23,7 +23,6 @@ import (
 	"github.com/alibaba/pouch/pkg/reference"
 	"github.com/alibaba/pouch/pkg/utils"
 
-	registry2 "github.com/alibaba/pouch/registry"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/content"
 	ctrdmetaimages "github.com/containerd/containerd/images"
@@ -331,7 +330,7 @@ func (mgr *ImageManager) ListImages(ctx context.Context, filter filters.Args) ([
 func (mgr *ImageManager) SearchImages(ctx context.Context, name, registry string, auth *types.AuthConfig) ([]types.SearchResultItem, error) {
 	// Directly send API calls towards specified registry
 	if len(registry) == 0 {
-		registry = registry2.DefaultRegistry
+		registry = mgr.DefaultRegistry
 	}
 
 	u := registry + "search?q=" + url.QueryEscape(name)
@@ -340,7 +339,7 @@ func (mgr *ImageManager) SearchImages(ctx context.Context, name, registry string
 		return nil, err
 	}
 
-	if auth != nil && auth.IdentityToken != "" && auth.Username != "" {
+	if auth != nil && auth.Username != "" && auth.Password != "" {
 		req.SetBasicAuth(auth.Username, auth.Password)
 	}
 
@@ -351,7 +350,7 @@ func (mgr *ImageManager) SearchImages(ctx context.Context, name, registry string
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("Unexepected status code %d", res.StatusCode)
+		return nil, fmt.Errorf("unexepected status code %d", res.StatusCode)
 	}
 
 	rawData, err := ioutil.ReadAll(res.Body)
@@ -359,17 +358,17 @@ func (mgr *ImageManager) SearchImages(ctx context.Context, name, registry string
 		return nil, err
 	}
 
-	type SearchResults struct {
-		Query      string                   `json:"query"`
-		NumResults int                      `json:"num_results"`
-		Results    []types.SearchResultItem `json:"results"`
+	var searchResults types.SearchResults
+	var result []types.SearchResultItem
+	err = json.Unmarshal(rawData, &searchResults)
+	if err != nil {
+		return nil, err
 	}
 
-	searchResults := new(SearchResults)
-	err = json.Unmarshal(rawData, searchResults)
-
-	return searchResults.Results, err
-
+	for _, searchResultItem := range searchResults.Results {
+		result = append(result, *searchResultItem)
+	}
+	return result, err
 }
 
 // RemoveImage deletes a reference.

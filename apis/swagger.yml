@@ -3176,25 +3176,41 @@ definitions:
         format: "int64"
         x-nullable: false
 
-  SearchResultItem:
+  SearchResults:
     type: "object"
-    description: "search result item in search results."
+    description: "search results from specified registry."
     properties:
-      description:
+      query:
         type: "string"
-        description: "description just shows the description of this image"
-      is_official:
-        type: "boolean"
-        description: "is_official shows if this image is marked official."
-      is_automated:
-        type: "boolean"
-        description: "is_automated means whether this image is automated."
-      name:
-        type: "string"
-        description: "name represents the name of this image"
-      star_count:
+        description: "query contains the query string that generated the search results"
+      num_results:
         type: "integer"
-        description: "star_count refers to the star count of this image."
+        description: "NumResults indicates the number of results the query returne"
+      results:
+        type: "array"
+        description: "Results is a slice containing the actual results for the search"
+        items:
+          $ref: "#/definitions/SearchResultItem"
+
+  SearchResultItem:
+      type: "object"
+      description: "search result item in search results."
+      properties:
+        description:
+          type: "string"
+          description: "description just shows the description of this image"
+        is_official:
+          type: "boolean"
+          description: "is_official shows if this image is marked official."
+        is_automated:
+          type: "boolean"
+          description: "is_automated means whether this image is automated."
+        name:
+          type: "string"
+          description: "name represents the name of this image"
+        star_count:
+          type: "integer"
+          description: "star_count refers to the star count of this image."
 
   VolumeInfo:
     type: "object"

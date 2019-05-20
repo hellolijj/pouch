@@ -152,7 +152,7 @@ func (mgr *SystemManager) Info() (types.SystemInfo, error) {
 		// ID: ,
 		CgroupDriver:       mgr.config.GetCgroupDriver(),
 		Images:             int64(len(images)),
-		IndexServerAddress: registry.DefaultRegistry,
+		IndexServerAddress: "https://index.docker.io/v1/",
 		DefaultRegistry:    mgr.config.DefaultRegistry,
 		KernelVersion:      kernelVersion,
 		Labels:             mgr.config.Labels,

@@ -16,6 +16,7 @@ import (
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/httputils"
 	util_metrics "github.com/alibaba/pouch/pkg/utils/metrics"
+	"github.com/go-openapi/strfmt"
 
 	"github.com/gorilla/mux"
 	"github.com/opencontainers/go-digest"
@@ -99,6 +100,9 @@ func (s *Server) searchImages(ctx context.Context, rw http.ResponseWriter, req *
 	if authStr != "" {
 		data := base64.NewDecoder(base64.URLEncoding, strings.NewReader(authStr))
 		if err := json.NewDecoder(data).Decode(&authConfig); err != nil {
+			return err
+		}
+		if err := authConfig.Validate(strfmt.NewFormats()); err != nil {
 			return err
 		}
 	}
