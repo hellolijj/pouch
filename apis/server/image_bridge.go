@@ -227,3 +227,39 @@ func (s *Server) pushImage(ctx context.Context, rw http.ResponseWriter, req *htt
 
 	return nil
 }
+
+// pruneImage will remove unused images.
+func (s *Server) pruneImage(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+	filter, err := filters.FromParam(req.FormValue("filters"))
+	if err != nil {
+		return err
+	}
+
+	imageList, err := s.ImageMgr.ListImages(ctx, filter)
+	if err != nil {
+		return err
+	}
+
+	toDeletedImgs := []types.ImageInfo{}
+
+	for _, img := range imageList {
+		containers, err := s.ContainerMgr.List(ctx, &mgr.ContainerListOption{
+			All: true,
+			FilterFunc: func(c *mgr.Container) bool {
+				return c.Image == img.ID
+			}})
+		if err != nil {
+			return err
+		}
+		if len(containers) == 0 {
+			toDeletedImgs = append(toDeletedImgs, img)
+		}
+	}
+
+	imagesPruneResp, err := s.ImageMgr.PruneImage(ctx, toDeletedImgs, filter)
+	if err != nil {
+		logrus.Errorf("failed to prune images: %v", err)
+		return err
+	}
+	return EncodeResponse(rw, http.StatusOK, imagesPruneResp)
+}

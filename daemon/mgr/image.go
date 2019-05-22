@@ -90,6 +90,9 @@ type ImageMgr interface {
 
 	// GetOCIImageConfig returns the image config of OCI
 	GetOCIImageConfig(ctx context.Context, image string) (ocispec.ImageConfig, error)
+
+	// PruneImage prune unused images
+	PruneImage(ctx context.Context, imageInfo []types.ImageInfo, filters filters.Args) (types.ImagePruneResp, error)
 }
 
 // ImageManager is an implementation of interface ImageMgr.

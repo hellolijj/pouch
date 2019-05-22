@@ -59,6 +59,7 @@ type ImageAPIClient interface {
 	ImageSave(ctx context.Context, imageName string) (io.ReadCloser, error)
 	ImageHistory(ctx context.Context, name string) ([]types.HistoryResultItem, error)
 	ImagePush(ctx context.Context, ref, encodedAuth string) (io.ReadCloser, error)
+	ImagePrune(ctx context.Context, filters filters.Args) (types.ImagePruneResp, error)
 }
 
 // VolumeAPIClient defines methods of Volume client.
