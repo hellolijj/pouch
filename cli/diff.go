@@ -40,6 +40,7 @@ func (diff *DiffCommand) runDiff(args []string) error {
 	fmt.Println("start in client")
 	diffs, err := apiClient.ContainerDiff(ctx, containerName)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 	fmt.Println(diffs)
