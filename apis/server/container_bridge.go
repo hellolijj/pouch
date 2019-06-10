@@ -607,3 +607,14 @@ func (s *Server) commitContainer(ctx context.Context, rw http.ResponseWriter, re
 
 	return EncodeResponse(rw, http.StatusCreated, id)
 }
+
+func (s *Server) diffContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+	name := mux.Vars(req)["name"]
+
+	diff, err := s.ContainerMgr.Diff(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	return EncodeResponse(rw, http.StatusOK, diff)
+}
