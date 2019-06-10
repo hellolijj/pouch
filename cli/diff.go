@@ -20,7 +20,7 @@ func (diff *DiffCommand) Init(c *Cli) {
 	diff.cli = c
 	diff.cmd = &cobra.Command{
 		Use:   "diff [OPTIONS] CONTAINER",
-		Short: "look for changes to files",
+		Short: "Inspect changes to files or directories on a container's filesystem",
 		Long:  diffDescription,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -37,11 +37,14 @@ func (diff *DiffCommand) runDiff(args []string) error {
 	ctx := context.Background()
 	apiClient := diff.cli.Client()
 
+	fmt.Println("start in client")
 	diffs, err := apiClient.ContainerDiff(ctx, containerName)
 	if err != nil {
 		return err
 	}
 	fmt.Println(diffs)
+	fmt.Println("end in client")
+
 	return nil
 }
 
