@@ -42,7 +42,7 @@ func (diff *DiffCommand) runDiff(args []string) error {
 		return err
 	}
 	fmt.Println(diffs)
-
+	return nil
 }
 
 // diffExample shows examples in diff command, and is used in auto-generated cli docs.
